@@ -1451,7 +1451,7 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, s
         keyboard = get_profile_keyboard()
     elif field == "category":
         from src.database.models import Category
-        from src.keyboards.admin_kb import get_product_category_keyboard
+        # get_product_category_keyboard is already imported at top level
         
         query = select(Category).where(Category.is_active == True).order_by(Category.sort_order.asc())
         result = await session.execute(query)
@@ -1459,7 +1459,7 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, s
         keyboard = get_product_category_keyboard(categories)
     elif field == "image":
         await state.set_state(AdminStates.waiting_for_product_edit_value)
-        from src.keyboards.admin_kb import get_cancel_keyboard
+        # get_cancel_keyboard is already imported at top level
         await callback.message.answer(
             "🖼️ <b>Оновлення зображення</b>\n\n"
             "Надішліть нове фото товару:",

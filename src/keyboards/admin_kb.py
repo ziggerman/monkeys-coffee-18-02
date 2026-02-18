@@ -297,6 +297,23 @@ def get_roast_level_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_profile_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting profile."""
+    builder = InlineKeyboardBuilder()
+    
+    profiles = [
+        ("🥤 Еспресо (Espresso)", "profile_espresso"),
+        ("🫖 Фільтр (Filter)", "profile_filter"),
+        ("⚗️ Універсальна (Universal)", "profile_universal"),
+    ]
+    
+    for label, code in profiles:
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_profile:{code}"))
+        
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    return builder.as_markup()
+
+
 def get_processing_method_keyboard() -> InlineKeyboardMarkup:
     """Get keyboard for selecting processing method."""
     builder = InlineKeyboardBuilder()
