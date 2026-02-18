@@ -49,7 +49,12 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
     cart_items = await CartService.get_cart_items(session, user_id)
     
     if not cart_items:
-        text = """
+        # Get dynamic text for empty cart
+        from src.services.content_service import ContentService
+        text = await ContentService.get_text(session, "cart.empty_text")
+        
+        if not text:
+             text = """
 🟠 <b>Твій Кошик</b> 🐒
 Тут пусто, як у понеділок зранку без кави. 😴 Час це виправляти!
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -86,7 +91,9 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
     discount_breakdown = DiscountEngine.calculate_full_discount(cart_items, user, active_rules=active_rules)
     
     # Build cart display
-    text = f"🟠 <b>ВАШ КОШИК</b> 🐒\n\n"
+    from src.services.content_service import ContentService
+    header = await ContentService.get_text(session, "cart.header")
+    text = header if header else f"🟠 <b>ВАШ КОШИК</b> 🐒\n\n"
     
     # List items
     for idx, (cart_item, product) in enumerate(cart_items, 1):

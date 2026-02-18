@@ -11,9 +11,9 @@ class AIService:
         self.api_key = settings.gemini_api_key
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            # Use 2.0-flash-lite as primary for maximum speed
-            self.primary_model = genai.GenerativeModel('models/gemini-2.0-flash-lite')
-            self.fallback_model = genai.GenerativeModel('models/gemini-flash-latest')
+            # Use gemini-flash-latest (1.5 Flash) for stability
+            self.primary_model = genai.GenerativeModel('models/gemini-flash-latest')
+            self.fallback_model = genai.GenerativeModel('models/gemini-2.0-flash-lite')
         else:
             self.primary_model = None
             self.fallback_model = None

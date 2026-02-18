@@ -30,21 +30,23 @@ logger = logging.getLogger(__name__)
 @router.callback_query(F.data == "goto_catalog")
 async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSession):
     """Show catalog start - profile selection with dynamic image."""
-    text = """
+    from src.services.content_service import ContentService
+    
+    # Fetch all pieces in parallel or sequence
+    t_espresso = await ContentService.get_text(session, "catalog.espresso")
+    t_filter = await ContentService.get_text(session, "catalog.filter")
+    t_guide = await ContentService.get_text(session, "catalog.guide")
+    
+    text = f"""
 🟢 <b>Кавова Карта</b> 🐒
 Оберіть профіль смаку:
 ━━━━━━━━━━━━━━━━━━━━━━
-🟠 <b>Для еспресо</b>
-(щільність, шоколад, карамель, горіхи)
-🟢 <b>Для фільтру</b>
-(кислинка, фрукти, ягоди, квіти)
+{t_espresso}
+{t_filter}
 🟢 <b>Універсальна</b>
 (збалансована, для будь-якого методу)
 ━━━━━━━━━━━━━━━━━━━━━━
-🟠 <b>ЯК ОБРАТИ?</b>
-• Кавомашина/Молоко ➜ <b>Еспресо</b>
-• V60/Аеропрес/Фільтр ➜ <b>Фільтр</b>
-• Турка/Гейзер/Чашка ➜ <b>Універсальна</b>
+{t_guide}
 👇 Тицьни на кнопку нижче
 """
     

@@ -15,7 +15,12 @@ router = Router()
 @router.message(F.text == "👤 Мій Кабінет")
 async def show_cabinet_menu(message: Message, session: AsyncSession):
     """Show cabinet menu."""
-    text = """
+    # Get dynamic text
+    from src.services.content_service import ContentService
+    text = await ContentService.get_text(session, "cabinet.caption")
+    
+    if not text:
+        text = """
 🔴 <b>Твій Кабінет</b> 🐒
 
 Це твоя база. Тут історія покупок і твоя статистика. ⚫
@@ -77,13 +82,10 @@ async def show_offers_menu(message: Message, session: AsyncSession):
 
 
 @router.message(F.text == "📖 Корисна Інфо")
-async def show_info_menu(message: Message):
+async def show_info_menu(message: Message, session: AsyncSession):
     """Show info menu."""
-    text = """
-⚫ <b>Інфо-Хаб</b> 🐒
-
-Все, що ти хотів знати, а ми хотіли розповісти. ⚫
-"""
+    from src.services.content_service import ContentService
+    text = await ContentService.get_text(session, "about.text")
     
     builder = InlineKeyboardBuilder()
     

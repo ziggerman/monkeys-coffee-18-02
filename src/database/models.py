@@ -322,3 +322,36 @@ class VolumeDiscount(Base):
     description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ModuleContent(Base):
+    """Dynamic text content for modules managed by admin."""
+    __tablename__ = 'module_content'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, index=True)  # e.g. 'cart.empty_text'
+    value: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(String(200))  # Admin-facing description
+    category: Mapped[str] = mapped_column(String(50), default='general')  # cart, info, catalog
+    
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<ModuleContent {self.key}>"
+
+
+class Category(Base):
+    """Product categories managed by admin."""
+    __tablename__ = 'categories'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(50), unique=True, index=True)  # e.g. 'coffee', 'equipment'
+    name_ua: Mapped[str] = mapped_column(String(100))
+    name_en: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<Category {self.slug}>"

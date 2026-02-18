@@ -664,17 +664,24 @@ async def show_product_management(callback: CallbackQuery, session: AsyncSession
 # ========== PRODUCT MANAGEMENT (Full) ==========
 
 @router.callback_query(F.data == "admin_product_add")
-async def start_product_add(callback: CallbackQuery, state: FSMContext):
+async def start_product_add(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Start product addition flow by asking for category."""
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
         return
     
+    from src.database.models import Category
+    from src.keyboards.admin_kb import get_product_category_keyboard
+    
+    query = select(Category).where(Category.is_active == True).order_by(Category.sort_order.asc())
+    result = await session.execute(query)
+    categories = result.scalars().all()
+    
     await state.clear()
     await state.set_state(AdminStates.waiting_for_product_category)
     await callback.message.answer(
         "📂 <b>Крок 0: Оберіть категорію товару</b>",
-        reply_markup=get_product_category_keyboard(),
+        reply_markup=get_product_category_keyboard(categories),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -1359,7 +1366,7 @@ async def admin_product_edit(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("admin_product_edit_field:"))
-async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext):
+async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Start FSM for editing a specific product field."""
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
@@ -1372,6 +1379,7 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext):
     field_names = {
         "name_ua": "Назва (UA)",
         "origin": "Походження",
+        "category": "Категорія",
         "price_300g": "Ціна за 300г",
         "price_1kg": "Ціна за 1кг",
         "profile": "Профіль (espresso, filter, universal)",
@@ -1389,8 +1397,20 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext):
         keyboard = get_roast_level_keyboard()
     elif field == "processing_method":
         keyboard = get_processing_method_keyboard()
+    elif field == "profile":
+        from src.keyboards.admin_kb import get_profile_keyboard
+        keyboard = get_profile_keyboard()
+    elif field == "category":
+        from src.database.models import Category
+        from src.keyboards.admin_kb import get_product_category_keyboard
+        
+        query = select(Category).where(Category.is_active == True).order_by(Category.sort_order.asc())
+        result = await session.execute(query)
+        categories = result.scalars().all()
+        keyboard = get_product_category_keyboard(categories)
     elif field == "image":
-        from src.keyboards.admin_kb import get_skip_image_keyboard
+        await state.set_state(AdminStates.waiting_for_product_edit_value)
+        from src.keyboards.admin_kb import get_cancel_keyboard
         await callback.message.answer(
             "🖼️ <b>Оновлення зображення</b>\n\n"
             "Надішліть нове фото товару:",
@@ -1439,6 +1459,26 @@ async def process_product_edit_processing(callback: CallbackQuery, state: FSMCon
     }
     value = proc_map.get(proc_code, "Мита")
     await save_product_edit(callback, state, session, value)
+
+
+@router.callback_query(AdminStates.waiting_for_product_edit_value, F.data.startswith("admin_profile:"))
+async def process_product_edit_profile(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Process profile edit selection."""
+    profile_code = callback.data.split(":")[1]
+    profile_map = {
+        "profile_espresso": "espresso",
+        "profile_filter": "filter",
+        "profile_universal": "universal"
+    }
+    value = profile_map.get(profile_code, "universal")
+    await save_product_edit(callback, state, session, value)
+
+
+@router.callback_query(AdminStates.waiting_for_product_edit_value, F.data.startswith("admin_cat:"))
+async def process_product_edit_category(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Process category edit selection."""
+    category_slug = callback.data.split(":")[1]
+    await save_product_edit(callback, state, session, category_slug)
 
 
 @router.message(AdminStates.waiting_for_product_edit_value, F.photo)
@@ -1830,3 +1870,123 @@ async def delete_discount(callback: CallbackQuery, session: AsyncSession):
         await session.commit()
         await callback.answer("Знижку видалено")
         await show_discount_management(callback, session)
+
+# ========== SMART EDITOR (CONTENT MANAGEMENT) ==========
+
+@router.callback_query(F.data == "admin_content_main")
+async def show_content_management_menu(callback: CallbackQuery):
+    """Show content management menu."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    text = """
+<b>🎛 Конструктор та Контент</b>
+
+Тут ви можете змінювати тексти, банери та налаштовувати знижки.
+
+<b>📝 Тексти:</b> Заголовки, описи, повідомлення.
+<b>🖼️ Зображення:</b> Банери в меню.
+<b>⚡ Знижки:</b> Правила оптових знижок.
+"""
+    from src.keyboards.admin_kb import get_content_management_keyboard
+    keyboard = get_content_management_keyboard()
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_content_texts")
+async def show_text_editor_menu(callback: CallbackQuery, session: AsyncSession):
+    """Show list of editable texts."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    from src.services.content_service import ContentService
+    items = await ContentService.get_all_content(session)
+    
+    text = "<b>📝 Редактор Текстів</b>\n\nОберіть елемент для редагування:"
+    
+    from src.keyboards.admin_kb import get_content_editor_keyboard
+    keyboard = get_content_editor_keyboard(items)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_edit_text:"))
+async def edit_text_value_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Start editing a specific text value."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    key = callback.data.replace("admin_edit_text:", "")
+    
+    from src.services.content_service import ContentService
+    value = await ContentService.get_text(session, key)
+    
+    await state.update_data(edit_text_key=key)
+    await state.set_state(AdminStates.waiting_for_text_content)
+    
+    text = (
+        f"✏️ <b>Редагування: {key}</b>\n\n"
+        f"Поточне значення:\n"
+        f"<code>{value}</code>\n\n"
+        f"👇 Введіть новий текст (підтримується HTML):"
+    )
+    
+    from src.keyboards.admin_kb import get_text_edit_action_keyboard
+    keyboard = get_text_edit_action_keyboard(key)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_for_text_content)
+async def process_text_content_preview(message: Message, state: FSMContext):
+    """Show preview of the edited text."""
+    new_text = message.text
+    # Basic HTML validation could go here
+    
+    await state.update_data(new_text_value=new_text)
+    await state.set_state(AdminStates.waiting_for_text_content_confirm)
+    
+    preview_text = f"<b>👁️ Попередній перегляд:</b>\n\n{new_text}\n\n━━━━━━━━━━━━━━━━\nЗберегти зміни?"
+    
+    from src.keyboards.admin_kb import get_confirm_save_keyboard
+    await message.answer(preview_text, reply_markup=get_confirm_save_keyboard(), parse_mode="HTML")
+
+
+@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_save")
+async def confirm_text_save(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Save the text content."""
+    data = await state.get_data()
+    key = data.get('edit_text_key')
+    new_value = data.get('new_text_value')
+    
+    from src.services.content_service import ContentService
+    await ContentService.update_text(session, key, new_value)
+    
+    await state.clear()
+    await callback.message.edit_text(f"✅ Текст для <b>{key}</b> успішно оновлено!", reply_markup=None, parse_mode="HTML")
+    
+    # Return to updated list (need to fetch new list)
+    await show_text_editor_menu(callback, session)
+
+
+@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_edit_continue")
+async def continue_text_edit(callback: CallbackQuery, state: FSMContext):
+    """Go back to editing state."""
+    await state.set_state(AdminStates.waiting_for_text_content)
+    await callback.message.edit_text("👇 Продовжуйте редагування (надішліть виправлений текст):", reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_cancel")
+async def cancel_text_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Cancel editing."""
+    await state.clear()
+    await callback.answer("❌ Скасовано")
+    await show_text_editor_menu(callback, session)
