@@ -106,13 +106,23 @@ async def show_promotions(event: Message | CallbackQuery, session: AsyncSession,
         else:
             await event.answer(text, parse_mode="HTML")
     else:
+        # Handle CallbackQuery
         try:
-            await event.message.delete()
+            if photo:
+                from aiogram.types import InputMediaPhoto
+                media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
+                await event.message.edit_media(media=media)
+            else:
+                await event.message.edit_text(text, parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Failed to delete promotions message: {e}")
-            
-        if photo:
-            await event.message.answer_photo(photo, caption=text, parse_mode="HTML")
-        else:
-            await event.message.answer(text, parse_mode="HTML")
+            logger.warning(f"Failed to edit promotions message: {e}")
+            try:
+                await event.message.delete()
+            except Exception:
+                pass
+                
+            if photo:
+                await event.message.answer_photo(photo, caption=text, parse_mode="HTML")
+            else:
+                await event.message.answer(text, parse_mode="HTML")
         await event.answer()

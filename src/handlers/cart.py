@@ -139,11 +139,25 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
         else:
             await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        await event.message.delete()
-        if photo:
-            await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
-        else:
-            await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        # Handle CallbackQuery
+        try:
+            if photo:
+                from aiogram.types import InputMediaPhoto
+                media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
+                await event.message.edit_media(media=media, reply_markup=keyboard)
+            else:
+                await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"Failed to edit cart message: {e}")
+            try:
+                await event.message.delete()
+            except Exception:
+                pass
+                
+            if photo:
+                await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+            else:
+                await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         await event.answer()
 
 

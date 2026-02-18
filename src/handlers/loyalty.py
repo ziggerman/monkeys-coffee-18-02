@@ -88,13 +88,25 @@ async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSess
         else:
             await event.answer(status_text, parse_mode="HTML")
     else:
+        # Handle CallbackQuery
         try:
-            await event.message.delete()
+            if photo:
+                from aiogram.types import InputMediaPhoto
+                # If it's a file_id (string), use it directly. If it's FSInputFile, use it.
+                media = InputMediaPhoto(media=photo, caption=status_text, parse_mode="HTML")
+                await event.message.edit_media(media=media)
+            else:
+                await event.message.edit_text(status_text, parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Failed to delete loyalty message: {e}")
-            
-        if photo:
-            await event.message.answer_photo(photo, caption=status_text, parse_mode="HTML")
-        else:
-            await event.message.answer(status_text, parse_mode="HTML")
+            logger.warning(f"Failed to edit loyalty message, falling back to delete+send: {e}")
+            try:
+                await event.message.delete()
+            except Exception:
+                pass
+                
+            if photo:
+                await event.message.answer_photo(photo, caption=status_text, parse_mode="HTML")
+            else:
+                await event.message.answer(status_text, parse_mode="HTML")
+        
         await event.answer()

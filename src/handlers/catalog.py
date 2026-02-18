@@ -66,16 +66,24 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
         else:
             await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
     else:
+        # Handle CallbackQuery
         try:
-            await event.message.delete()
+            if photo:
+                media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
+                await event.message.edit_media(media=media, reply_markup=keyboard)
+            else:
+                await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Delete failed in show_catalog_start: {e}")
-            return
-            
-        if photo:
-            await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
-        else:
-            await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            logger.warning(f"Edit failed in show_catalog_start, falling back to delete+send: {e}")
+            try:
+                await event.message.delete()
+            except Exception:
+                pass
+                
+            if photo:
+                await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+            else:
+                await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         await event.answer()
 
 
@@ -243,16 +251,7 @@ async def change_page(callback: CallbackQuery, session: AsyncSession):
         await callback.answer("Пусто... Мабуть, все випили. Зазирни пізніше!", show_alert=True)
         return
 
-    # Use robust delete + send (is_edit=False) to ensure Back button works
-    # and to prevent double-menu issues (fail-fast on delete)
-    try:
-        await callback.message.delete()
-    except Exception as e:
-        # If delete fails (e.g. double click), stop here to prevent duplicate sending
-        logger.warning(f"Delete failed in change_page (preventing duplicate): {e}")
-        return
-
-    # Show page (new message)
+    # Use is_edit=True for show_product_page
     await show_product_page(
         callback.message, 
         products, 
@@ -260,7 +259,7 @@ async def change_page(callback: CallbackQuery, session: AsyncSession):
         selected_profile, 
         session, 
         callback.from_user.id,
-        is_edit=False
+        is_edit=True
     )
     await callback.answer()
 

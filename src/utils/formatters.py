@@ -172,8 +172,8 @@ async def generate_product_description(
     origin_part = f" (<b>{origin}</b>)" if origin else ""
     roast_lower = (roast or "").lower()
     
-    # Try AI first
-    ai_narrative = await ai_service.generate_description_narrative(
+    # Try AI first (Professional Mode)
+    ai_narrative = await ai_service.generate_professional_description(
         name=name,
         origin=origin or "Секретна локація",
         roast=roast or "Універсальна",

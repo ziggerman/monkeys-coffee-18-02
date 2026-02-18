@@ -119,12 +119,25 @@ async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSessio
     ))
     
     if isinstance(event, CallbackQuery):
-        await event.message.delete()
-        if MODULE_TASTING_SETS.exists():
-            photo = FSInputFile(MODULE_TASTING_SETS)
-            await event.message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        else:
-            await event.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        try:
+            if MODULE_TASTING_SETS.exists():
+                from aiogram.types import InputMediaPhoto
+                media = InputMediaPhoto(media=FSInputFile(MODULE_TASTING_SETS), caption=text, parse_mode="HTML")
+                await event.message.edit_media(media=media, reply_markup=builder.as_markup())
+            else:
+                await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"Failed to edit tasting sets message: {e}")
+            try:
+                await event.message.delete()
+            except Exception:
+                pass
+                
+            if MODULE_TASTING_SETS.exists():
+                photo = FSInputFile(MODULE_TASTING_SETS)
+                await event.message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            else:
+                await event.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         await event.answer()
     else:
         if MODULE_TASTING_SETS.exists():
