@@ -11,7 +11,7 @@ from src.database.session import init_db, async_session
 from sqlalchemy import select
 
 # Import handlers
-from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, profile, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils
+from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, profile, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils, unhandled
 from src.utils.bot_commands import setup_bot_commands
 
 # Configure logging
@@ -72,6 +72,9 @@ async def main():
     
     dp.include_router(debug_utils.router)
     
+    # Catch-all for unhandled updates (MUST BE LAST)
+    dp.include_router(unhandled.router)
+    
     # Middleware to inject database session and handle user registration
     @dp.update.middleware()
     async def db_session_middleware(handler, event, data):
@@ -124,7 +127,11 @@ async def main():
                 state = data.get('state')
                 current_state = await state.get_state() if state else "Unknown"
                 logger.info(f"📨 MESSAGE RECEIVED: '{event.message.text}' | User: {tg_user.id if tg_user else 'None'} | State: {current_state}")
-                
+            elif hasattr(event, "callback_query") and event.callback_query:
+                state = data.get('state')
+                current_state = await state.get_state() if state else "Unknown"
+                logger.info(f"🔘 CALLBACK RECEIVED: '{event.callback_query.data}' | User: {tg_user.id if tg_user else 'None'} | State: {current_state}")
+
             return await handler(event, data)
     
     # Run startup
