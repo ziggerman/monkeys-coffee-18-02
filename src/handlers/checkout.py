@@ -166,22 +166,26 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
     
     keyboard = get_order_confirmation_keyboard(order.id, payment_url=payment_url)
     
-    # 🧹 Clear Reply Keyboard because we are switching to Inline flow
-    from aiogram.types import ReplyKeyboardRemove
-    clearing_msg = await message.bot.send_message(
-        chat_id=user_id,
-        text="⏳ Формуємо замовлення...",
-        reply_markup=ReplyKeyboardRemove()
+    # 🧹 Restore Main Menu Keyboard to ensure "Menu" button is visible
+    user_id = message.from_user.id
+    is_admin = user_id in settings.admin_id_list
+    main_kb = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    
+    # First, send a small message to restore the reply keyboard (Menu icon)
+    # This also helps separate the "Forming order..." from the actual content
+    await message.bot.send_message(
+        chat_id=user_id, 
+        text="✨ Ваше замовлення сформовано!", 
+        reply_markup=main_kb
     )
     
-    # Використовуємо bot.send_message замість message.answer для 100% надійності після видалення
-    await message.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard, parse_mode="HTML")
-    
-    # Delete the "Clearing" message to keep chat clean
-    try:
-        await clearing_msg.delete()
-    except Exception:
-        pass
+    # Then send the actual order preview with INLINE buttons
+    await message.bot.send_message(
+        chat_id=user_id, 
+        text=text, 
+        reply_markup=keyboard, 
+        parse_mode="HTML"
+    )
         
     await state.set_state(CheckoutStates.confirming_order)
     await state.update_data(order_id=order.id)
