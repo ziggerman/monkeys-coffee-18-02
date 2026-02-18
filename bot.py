@@ -57,7 +57,6 @@ async def main():
     dp.include_router(admin_discounts.router)
     dp.include_router(start.router)
     dp.include_router(profile.router)
-    dp.include_router(catalog.router)
     dp.include_router(checkout.router)
     dp.include_router(cart.router)
     dp.include_router(tasting_sets.router)
@@ -65,9 +64,13 @@ async def main():
     dp.include_router(loyalty.router)
     dp.include_router(promotions.router)
     dp.include_router(bundles.router)
-    dp.include_router(debug_utils.router)
     dp.include_router(support.router)
     dp.include_router(info.router)
+    
+    # Catalog (contains search catch-all, must be last of main features)
+    dp.include_router(catalog.router)
+    
+    dp.include_router(debug_utils.router)
     
     # Middleware to inject database session and handle user registration
     @dp.update.middleware()

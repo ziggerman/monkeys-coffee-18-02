@@ -34,10 +34,10 @@ class AIService:
             except Exception as e:
                 logger.warning(f"Gemini init failed: {e}")
 
-    async def _call_openai(self, prompt: str, system: str = None, timeout: float = 20.0) -> str | None:
-        """Call GPT-4o with timeout and quota error handling."""
+    async def _call_openai(self, prompt: str, system: str = None, timeout: float = 20.0) -> tuple[str | None, str | None]:
+        """Call GPT-4o with timeout and quota error handling. Returns (text, error)."""
         if not self.openai_client:
-            return None
+            return None, "OpenAI client not initialized"
         try:
             messages = []
             if system:
@@ -48,26 +48,29 @@ class AIService:
                 self.openai_client.chat.completions.create(
                     model="gpt-4o",
                     messages=messages,
-                    max_tokens=600,
-                    temperature=0.85,
+                    max_tokens=800,
+                    temperature=0.7,
                 ),
                 timeout=timeout
             )
             text = response.choices[0].message.content.strip()
-            return text if text and len(text) > 10 else None
+            if text and len(text) > 10:
+                return text, None
+            return None, "Empty response from OpenAI"
         except asyncio.TimeoutError:
             logger.warning("OpenAI timed out")
-            return None
+            return None, "OpenAI Timeout"
         except Exception as e:
             err = str(e)
+            logger.warning(f"OpenAI error: {e}")
             if "429" in err or "quota" in err.lower() or "insufficient_quota" in err:
-                logger.warning("OpenAI quota exhausted")
-            else:
-                logger.warning(f"OpenAI error: {e}")
-            return None
+                return None, "OpenAI Quota Exceeded"
+            return None, f"OpenAI Error: {str(e)[:50]}"
 
-    async def _call_gemini(self, prompt: str, timeout: float = 15.0) -> str | None:
-        """Call Gemini models with timeout and quota error handling."""
+    async def _call_gemini(self, prompt: str, timeout: float = 15.0) -> tuple[str | None, str | None]:
+        """Call Gemini models with timeout and quota error handling. Returns (text, error)."""
+        last_error = "Gemini Call Failed"
+        
         for model in self.gemini_models:
             try:
                 response = await asyncio.wait_for(
@@ -75,16 +78,19 @@ class AIService:
                 )
                 text = response.text.strip() if response and hasattr(response, 'text') else None
                 if text and len(text) > 10:
-                    return text
+                    return text, None
             except asyncio.TimeoutError:
                 logger.warning("Gemini model timed out")
+                last_error = "Gemini Timeout"
             except Exception as e:
                 err = str(e)
-                if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
-                    logger.warning("Gemini quota exhausted")
-                    return None
                 logger.warning(f"Gemini error: {e}")
-        return None
+                if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
+                    last_error = "Gemini Quota Exceeded"
+                else:
+                    last_error = f"Gemini Error: {str(e)[:50]}"
+                    
+        return None, last_error
 
     async def generate_professional_description(
         self,
@@ -119,14 +125,14 @@ class AIService:
 Пиши без води, максимум 40-50 слів."""
 
         # Try GPT-4o first
-        result = await self._call_openai(prompt, system=system)
+        result, _ = await self._call_openai(prompt, system=system)
         if result:
             logger.info(f"GPT-4o generated description for {name}")
             return result
 
         # Fallback to Gemini
         full_prompt = f"{system}\n\n{prompt}"
-        result = await self._call_gemini(full_prompt)
+        result, _ = await self._call_gemini(full_prompt)
         if result:
             logger.info(f"Gemini generated description for {name}")
         return result
@@ -157,26 +163,38 @@ class AIService:
 🔥 <b>{name}</b>. [Зухвалий опис смаку з емоцією — 1-2 речення]
 💡 Порада: [Практична порада по заварюванню]"""
 
-        result = await self._call_openai(prompt, system=system)
+        result, _ = await self._call_openai(prompt, system=system)
         if result:
             return result
         full_prompt = f"{system}\n\n{prompt}"
-        return await self._call_gemini(full_prompt)
+        result, _ = await self._call_gemini(full_prompt)
+        return result
 
-    async def generate_smart_editor_text(self, key: str, prompt: str) -> str | None:
-        """Generate text for Smart Editor content keys. GPT-4o → Gemini fallback."""
+    async def generate_smart_editor_text(self, key: str, prompt: str) -> tuple[str | None, str | None]:
+        """Generate text for Smart Editor content keys. GPT-4o → Gemini fallback. Returns (text, error)."""
 
         system = (
-            "Ти — копірайтер бренду Monkeys Coffee Roasters. "
-            "Пишеш тільки українською. Стиль: дружній, на-бренд, з емодзі. "
-            "Використовуй HTML теги <b> та <i> для форматування."
+            "Ти — професійний редактор Monkeys Coffee Roasters. "
+            "Твоя мета — писати чіткі, структуровані та продаючі тексти для Telegram-бота. "
+            "Використовуй марковані списки, емодзі (помірно) та HTML-теги <b> для акцентів. "
+            "Стиль: діловий, але дружній, без зайвого 'шуму' та води. "
+            "Тільки українська мова."
         )
 
-        result = await self._call_openai(prompt, system=system)
+        # Try GPT-4o
+        result, error = await self._call_openai(prompt, system=system)
         if result:
-            return result
+            return result, None
+            
+        # Fallback to Gemini
         full_prompt = f"{system}\n\n{prompt}"
-        return await self._call_gemini(full_prompt)
+        result, gemini_error = await self._call_gemini(full_prompt)
+        
+        if result:
+            return result, None
+            
+        # Return the most relevant error (OpenAI if set, else Gemini)
+        return None, error or gemini_error
 
 
 # Singleton instance
