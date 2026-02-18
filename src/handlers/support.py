@@ -68,19 +68,22 @@ async def show_support_menu(event: Message | CallbackQuery):
 у робочий час.
 """
     
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="← Головне меню", callback_data="start"))
+    
     if isinstance(event, Message):
         if MODULE_SUPPORT.exists():
             photo = FSInputFile(MODULE_SUPPORT)
-            await message.answer_photo(photo, caption=text, parse_mode="HTML")
+            await message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
         else:
-            await message.answer(text, parse_mode="HTML")
+            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     else:
         await message.delete()
         if MODULE_SUPPORT.exists():
             photo = FSInputFile(MODULE_SUPPORT)
-            await message.answer_photo(photo, caption=text, parse_mode="HTML")
+            await message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
         else:
-            await message.answer(text, parse_mode="HTML")
+            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         await event.answer()
 
 

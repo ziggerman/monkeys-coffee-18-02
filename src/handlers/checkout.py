@@ -191,8 +191,26 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
 
 
 @router.callback_query(F.data == "checkout_cancel_inline")
-async def handle_checkout_cancel_inline(callback: CallbackQuery, state: FSMContext):
+async def handle_checkout_cancel_inline(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Handle inline cancel button during checkout."""
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    
+    if order_id:
+        try:
+            query = select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+            result = await session.execute(query)
+            order = result.scalar_one_or_none()
+            
+            if order and order.status == "pending":
+                # Restore cart items before deleting the order
+                await CartService.restore_cart_from_pending_order(session, callback.from_user.id, order.items)
+                await session.delete(order)
+                await session.commit()
+                logger.info(f"Deleted pending order {order_id} via inline cancel")
+        except Exception as e:
+            logger.error(f"Error deleting pending order {order_id} on inline cancel: {e}")
+
     await callback.message.delete()
     await state.clear()
     
@@ -499,7 +517,25 @@ async def handle_checkout_edit(callback: CallbackQuery, state: FSMContext, sessi
     await show_cart(callback, session)
 
 
-async def cancel_checkout(message: Message, state: FSMContext):
+async def cancel_checkout(message: Message, state: FSMContext, session: AsyncSession):
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    
+    if order_id:
+        try:
+            query = select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+            result = await session.execute(query)
+            order = result.scalar_one_or_none()
+            
+            if order and order.status == "pending":
+                # Restore cart items before deleting the order
+                await CartService.restore_cart_from_pending_order(session, message.from_user.id, order.items)
+                await session.delete(order)
+                await session.commit()
+                logger.info(f"Deleted pending order {order_id} on cancel")
+        except Exception as e:
+            logger.error(f"Error deleting pending order {order_id} on cancel: {e}")
+
     await state.clear()
     user_id = message.from_user.id
     is_admin = user_id in settings.admin_id_list
@@ -512,11 +548,11 @@ async def cancel_checkout(message: Message, state: FSMContext):
 
 
 @router.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext):
+async def cmd_cancel(message: Message, state: FSMContext, session: AsyncSession):
     if await state.get_state() is None:
         await message.answer("Немає активних процесів для скасування")
         return
-    await cancel_checkout(message, state)
+    await cancel_checkout(message, state, session)
 
 
 @router.callback_query(F.data.startswith("checkout_tg_pay:"))

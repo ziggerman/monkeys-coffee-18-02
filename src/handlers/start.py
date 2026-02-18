@@ -114,20 +114,12 @@ async def callback_start(callback: CallbackQuery, session: AsyncSession, user: U
     
     welcome_text = f"🟢 <b>Головне Меню</b> 🐒\n\nПривіт, {callback.from_user.first_name}! Обирай свій шлях:"
     
-    try:
-        if HERO_BANNER.exists():
-            from aiogram.types import InputMediaPhoto
-            media = InputMediaPhoto(media=FSInputFile(HERO_BANNER), caption=welcome_text, parse_mode="HTML")
-            await callback.message.edit_media(media=media, reply_markup=keyboard)
-        else:
-            await callback.message.edit_text(welcome_text, reply_markup=keyboard, parse_mode="HTML")
-    except Exception as e:
-        logger.warning(f"Failed to edit start message: {e}")
-        # Fallback: send new message (do NOT delete first to avoid gallery accumulation)
-        if HERO_BANNER.exists():
-            await callback.message.answer_photo(FSInputFile(HERO_BANNER), caption=welcome_text, reply_markup=keyboard, parse_mode="HTML")
-        else:
-            await callback.message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
+    # Send NEW message to restore ReplyKeyboardMarkup
+    await callback.message.delete()
+    if HERO_BANNER.exists():
+        await callback.message.answer_photo(FSInputFile(HERO_BANNER), caption=welcome_text, reply_markup=keyboard, parse_mode="HTML")
+    else:
+        await callback.message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
     
     await callback.answer()
 

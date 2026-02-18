@@ -126,7 +126,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     """Get cancel keyboard for text input states."""
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text="❌ Скасувати"))
-    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_profile_confirmation_keyboard() -> InlineKeyboardMarkup:
@@ -142,4 +142,4 @@ def get_use_saved_keyboard(saved_value: str) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=f"🏠 {saved_value}"))
     builder.row(KeyboardButton(text="❌ Скасувати"))
-    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+    return builder.as_markup(resize_keyboard=True)

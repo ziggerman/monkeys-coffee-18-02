@@ -277,7 +277,7 @@ def get_product_delete_confirm_keyboard(product_id: int) -> InlineKeyboardMarkup
     return builder.as_markup()
 
 
-def get_roast_level_keyboard() -> InlineKeyboardMarkup:
+def get_roast_level_keyboard(category: str = "coffee") -> InlineKeyboardMarkup:
     """Get keyboard for selecting roast level."""
     builder = InlineKeyboardBuilder()
     
@@ -293,7 +293,7 @@ def get_roast_level_keyboard() -> InlineKeyboardMarkup:
     for label, code in levels:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_roast:{code}"))
         
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_product_back:{category}"))
     return builder.as_markup()
 
 
@@ -310,7 +310,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     for label, code in profiles:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_profile:{code}"))
         
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_product_back:roast"))
     return builder.as_markup()
 
 
@@ -329,7 +329,7 @@ def get_processing_method_keyboard() -> InlineKeyboardMarkup:
     for label, code in methods:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_proc:{code}"))
         
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_product_back:roast"))
     return builder.as_markup()
 
 
@@ -339,6 +339,10 @@ def get_skip_image_keyboard() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text="Пропустити крок 🖼️",
         callback_data="admin_product_skip_image"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_product_back:price_1kg"
     ))
     return builder.as_markup()
 

@@ -73,6 +73,70 @@ async def admin_global_cancel(message: Message, state: FSMContext):
     )
 
 
+@router.callback_query(F.data.startswith("admin_product_back:"))
+async def process_product_back(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Handle 'Back' navigation in product addition flow."""
+    target = callback.data.split(":")[1]
+    logger.info(f"Back navigation triggered to: {target} for user {callback.from_user.id}")
+    
+    data = await state.get_data()
+    category = data.get("category", "coffee")
+
+    if target in ["coffee", "equipment", "merch", "other", "tea", "cocoa", "accessories"]:
+        # Back from Step 1 (Name) to Category selection
+        await start_product_add(callback, state, session)
+        return
+
+    if target == "name":
+        # Back to Step 1 (Name)
+        await state.set_state(AdminStates.waiting_for_product_name)
+        await callback.message.edit_text(
+            f"📝 <b>Крок 1/8: Назва товару (UA)</b>\nПоточна: {data.get('name_ua', '---')}\n\nВведіть нову назву:",
+            reply_markup=get_cancel_keyboard(),
+            parse_mode="HTML"
+        )
+    elif target == "origin":
+        # Back to Step 2 (Origin)
+        await state.set_state(AdminStates.waiting_for_product_origin)
+        await callback.message.edit_text(
+            f"🌍 <b>Крок 2/8: Походження</b>\nПоточне: {data.get('origin', '---')}\n\nВведіть нове значення:",
+            reply_markup=get_roast_level_keyboard(category=category),
+            parse_mode="HTML"
+        )
+    elif target == "roast":
+        # Back to Step 3 (Roast)
+        await state.set_state(AdminStates.waiting_for_product_roast_level)
+        await callback.message.edit_text(
+            f"🔥 <b>Крок 3/8: Ступінь обсмаження</b>\nПоточне: {data.get('roast_level', '---')}\n\nОберіть нове:",
+            reply_markup=get_roast_level_keyboard(category="origin"),
+            parse_mode="HTML"
+        )
+    elif target == "processing":
+        # Back to Step 4 (Processing)
+        await ask_processing_method(callback.message, state)
+    elif target == "notes":
+        # Back to Step 5 (Notes)
+        await ask_tasting_notes(callback.message, state)
+    elif target == "price_300g":
+        # Back to Step 6 (Price 300g)
+        await state.set_state(AdminStates.waiting_for_product_price_300g)
+        await callback.message.edit_text(
+            f"💰 <b>Крок 6/8: Ціна за 300г</b>\nПоточна: {data.get('price_300g', '---')}\n\nВведіть нову:",
+            reply_markup=get_roast_level_keyboard(category="notes"),
+            parse_mode="HTML"
+        )
+    elif target == "price_1kg":
+        # Back to Step 7 (Price 1kg)
+        await state.set_state(AdminStates.waiting_for_product_price_1kg)
+        await callback.message.edit_text(
+            f"💰 <b>Крок 7/8: Ціна за 1кг</b>\nПоточна: {data.get('price_1kg', '---')}\n\nВведіть нову:",
+            reply_markup=get_roast_level_keyboard(category="price_300g"),
+            parse_mode="HTML"
+        )
+    
+    await callback.answer()
+
+
 @router.message(Command("admin"))
 @router.message(F.text == "⚙️ Адмін-панель")
 async def show_admin_panel(message: Message, session: AsyncSession):
@@ -109,6 +173,16 @@ async def show_admin_panel(message: Message, session: AsyncSession):
         reply_markup=keyboard, 
         parse_mode="HTML"
     )
+
+
+@router.message(Command("state"))
+async def cmd_check_state(message: Message, state: FSMContext):
+    """Debug command to check current FSM state."""
+    if not is_admin(message.from_user.id):
+        return
+    current_state = await state.get_state()
+    data = await state.get_data()
+    await message.answer(f"🔍 <b>Поточний стан:</b> {current_state}\n📦 <b>Дані:</b> {data}")
 
 
 @router.callback_query(F.data == "admin_main")
@@ -663,6 +737,7 @@ async def show_product_management(callback: CallbackQuery, session: AsyncSession
 @router.callback_query(F.data == "admin_product_add")
 async def start_product_add(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Start product addition flow by asking for category."""
+    logger.info(f"Admin product add started by user {callback.from_user.id}")
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
         return
@@ -691,9 +766,17 @@ async def start_product_add(callback: CallbackQuery, state: FSMContext, session:
 async def process_product_category(callback: CallbackQuery, state: FSMContext):
     """Process category selection and ask for name."""
     category = callback.data.split(":")[1]
+    logger.info(f"Category selected: {category} for user {callback.from_user.id}")
     await state.update_data(category=category)
     
     await state.set_state(AdminStates.waiting_for_product_name)
+    await callback.message.edit_text(
+        "📝 <b>Крок 1/8: Назва товару (UA)</b>\n"
+        "Введіть повну назву (наприклад: <i>V60 Drip Set</i> чи <i>Ethiopia Sidamo</i>):",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
     await callback.message.answer(
         "📝 <b>Крок 1: Назва товару (UA)</b>\n"
         "Введіть повну назву (наприклад: <i>V60 Drip Set</i> чи <i>Ethiopia Sidamo</i>)",
@@ -747,41 +830,51 @@ async def cmd_init_categories(message: Message, session: AsyncSession):
     await message.answer("✅ Категорії оновлено: тільки 'Кава' та 'Магазин'. Всі інші приховані.")
 
 
-@router.message(AdminStates.waiting_for_product_name)
+@router.message(AdminStates.waiting_for_product_name, F.text, ~F.text.startswith("/"))
 async def process_product_name(message: Message, state: FSMContext):
     """Process product name and branch based on category."""
+    logger.info(f"Product name entered: {message.text} for user {message.from_user.id}")
     await state.update_data(name_ua=message.text)
     data = await state.get_data()
     
     category = data.get("category")
     
     # Simple products (skip coffee specifics)
-    simple_categories = ["equipment", "merch", "other", "tea", "cocoa", "accessoties"]
+    simple_categories = ["equipment", "merch", "other", "tea", "cocoa", "accessories"]
     
     if category in simple_categories:
         # Skip coffee-specific steps, go to price
+        logger.info(f"Simple category detected: {category}. Moving to price.")
         await state.set_state(AdminStates.waiting_for_product_price_300g)
         await message.answer(
-            "💰 <b>Крок 2: Ціна (грн)</b>\n"
+            "💰 <b>Крок 2/3: Ціна (грн)</b>\n"
             "Введіть вартість за одиницю товару:",
-            reply_markup=get_cancel_keyboard(),
+            reply_markup=get_roast_level_keyboard(category=category), # Re-using back button logic
             parse_mode="HTML"
         )
     else:
-        # Proceed to coffee origin (Step 1.5)
+        # Proceed to coffee origin (Step 2/8)
+        logger.info(f"Coffee category detected. Moving to origin.")
         await state.set_state(AdminStates.waiting_for_product_origin)
         await message.answer(
-            "🌍 <b>Крок 1.5: Походження / Регіон</b>\n"
+            "🌍 <b>Крок 2/8: Походження / Регіон</b>\n"
             "Наприклад: <i>Ефіопія, Їргачефф</i> або <i>Колумбія, Уїла</i>",
-            reply_markup=get_cancel_keyboard(),
+            reply_markup=get_roast_level_keyboard(category=category),
             parse_mode="HTML"
         )
 
-@router.message(AdminStates.waiting_for_product_origin)
+@router.message(AdminStates.waiting_for_product_origin, F.text, ~F.text.startswith("/"))
 async def process_product_origin(message: Message, state: FSMContext):
     """Process origin and ask for roast level."""
+    logger.info(f"Product origin entered: {message.text} for user {message.from_user.id}")
     await state.update_data(origin=message.text)
     await state.set_state(AdminStates.waiting_for_product_roast_level)
+    await message.answer(
+        "🔥 <b>Крок 3/8: Ступінь обсмаження</b>\n"
+        "Оберіть зі списку або введіть свій варіант:",
+        reply_markup=get_roast_level_keyboard(category="origin"),
+        parse_mode="HTML"
+    )
     await message.answer(
         "🔥 <b>Крок 2: Ступінь обсмаження</b>\n"
         "Оберіть зі списку або введіть свій варіант:",
@@ -791,6 +884,7 @@ async def process_product_origin(message: Message, state: FSMContext):
 @router.callback_query(AdminStates.waiting_for_product_roast_level, F.data.startswith("admin_roast:"))
 async def process_roast_level_selection(callback: CallbackQuery, state: FSMContext):
     """Process roast level selection from keyboard."""
+    logger.info(f"Roast level selected: {callback.data} for user {callback.from_user.id}")
     roast_code = callback.data.split(":")[1]
     
     roast_map = {
@@ -803,14 +897,27 @@ async def process_roast_level_selection(callback: CallbackQuery, state: FSMConte
     }
     
     roast_level = roast_map.get(roast_code, "Середнє")
-    await state.update_data(roast_level=roast_level)
     
-    # Move to next step
+    # AUTOMATIC PROFILE MAPPING
+    # Default to universal
+    profile = "universal"
+    if roast_code == "roast_espresso":
+        profile = "espresso"
+    elif roast_code == "roast_filter":
+        profile = "filter"
+    elif roast_code == "roast_light":
+        profile = "filter"
+    elif roast_code == "roast_dark":
+        profile = "espresso"
+
+    await state.update_data(roast_level=roast_level, profile=profile)
+    
+    # Move to next step (Step 4/8)
     await ask_processing_method(callback.message, state)
     await callback.answer()
 
 
-@router.message(AdminStates.waiting_for_product_roast_level)
+@router.message(AdminStates.waiting_for_product_roast_level, F.text, ~F.text.startswith("/"))
 async def process_roast_level_text(message: Message, state: FSMContext):
     """Process custom roast level text."""
     await state.update_data(roast_level=message.text)
@@ -821,7 +928,7 @@ async def ask_processing_method(message: Message, state: FSMContext):
     """Ask for processing method."""
     await state.set_state(AdminStates.waiting_for_product_processing)
     await message.answer(
-        "⚙️ <b>Крок 3: Метод обробки</b>\n"
+        "⚙️ <b>Крок 4/8: Метод обробки</b>\n"
         "Оберіть зі списку або введіть свій варіант:",
         reply_markup=get_processing_method_keyboard(),
         parse_mode="HTML"
@@ -831,6 +938,7 @@ async def ask_processing_method(message: Message, state: FSMContext):
 @router.callback_query(AdminStates.waiting_for_product_processing, F.data.startswith("admin_proc:"))
 async def process_processing_selection(callback: CallbackQuery, state: FSMContext):
     """Process processing method selection."""
+    logger.info(f"Processing selected: {callback.data} for user {callback.from_user.id}")
     proc_code = callback.data.split(":")[1]
     
     proc_map = {
@@ -849,7 +957,7 @@ async def process_processing_selection(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
-@router.message(AdminStates.waiting_for_product_processing)
+@router.message(AdminStates.waiting_for_product_processing, F.text, ~F.text.startswith("/"))
 async def process_processing_text(message: Message, state: FSMContext):
     """Process custom processing method."""
     await state.update_data(processing_method=message.text)
@@ -860,30 +968,31 @@ async def ask_tasting_notes(message: Message, state: FSMContext):
     """Ask for tasting notes."""
     await state.set_state(AdminStates.waiting_for_product_tasting_notes)
     await message.answer(
-        "📝 <b>Крок 4: Дискриптори (нотки смаку)</b>\n"
+        "📝 <b>Крок 5/8: Дискриптори (нотки смаку)</b>\n"
         "Введіть через кому. Наприклад: <i>шоколад, горіхи, карамель</i>",
-        reply_markup=get_cancel_keyboard(),
+        reply_markup=get_roast_level_keyboard(category="processing"),
         parse_mode="HTML"
     )
 
 
-@router.message(AdminStates.waiting_for_product_tasting_notes)
+@router.message(AdminStates.waiting_for_product_tasting_notes, F.text, ~F.text.startswith("/"))
 async def process_product_tasting_notes(message: Message, state: FSMContext):
     """Process tasting notes and ask for price (300g)."""
     notes = [x.strip() for x in message.text.split(",")]
     await state.update_data(tasting_notes=notes)
     await state.set_state(AdminStates.waiting_for_product_price_300g)
     await message.answer(
-        "💰 <b>Крок 5: Ціна за 300г (грн)</b>\n"
+        "💰 <b>Крок 6/8: Ціна за 300г (грн)</b>\n"
         "Просто введіть число, наприклад: <i>450</i>",
-        reply_markup=get_cancel_keyboard(),
+        reply_markup=get_roast_level_keyboard(category="notes"),
         parse_mode="HTML"
     )
 
 
-@router.message(AdminStates.waiting_for_product_price_300g)
+@router.message(AdminStates.waiting_for_product_price_300g, F.text, ~F.text.startswith("/"))
 async def process_product_price_300g(message: Message, state: FSMContext):
     """Process price and either ask for 1kg or move to summary."""
+    logger.info(f"Price 300g entered: {message.text} for user {message.from_user.id}")
     try:
         price = int(message.text)
         await state.update_data(price_300g=price)
@@ -894,7 +1003,7 @@ async def process_product_price_300g(message: Message, state: FSMContext):
             await state.update_data(price_1kg=0)
             await state.set_state(AdminStates.waiting_for_product_image)
             await message.answer(
-                "🖼️ <b>Крок 3: Зображення товару</b>\n\n"
+                "🖼️ <b>Крок 3/3: Зображення товару</b>\n\n"
                 "Надішліть фото або натисніть кнопку нижче, щоб пропустити:",
                 reply_markup=get_skip_image_keyboard(),
                 parse_mode="HTML"
@@ -904,18 +1013,19 @@ async def process_product_price_300g(message: Message, state: FSMContext):
         else:
             await state.set_state(AdminStates.waiting_for_product_price_1kg)
             await message.answer(
-                "💰 <b>Крок 6: Ціна за 1кг (грн)</b>\n"
+                "💰 <b>Крок 7/8: Ціна за 1кг (грн)</b>\n"
                 "Наприклад: <i>1200</i>",
-                reply_markup=get_cancel_keyboard(),
+                reply_markup=get_roast_level_keyboard(category="price_300g"),
                 parse_mode="HTML"
             )
     except ValueError:
         await message.answer("❌ Будь ласка, введіть числове значення.")
 
 
-@router.message(AdminStates.waiting_for_product_price_1kg)
+@router.message(AdminStates.waiting_for_product_price_1kg, F.text, ~F.text.startswith("/"))
 async def process_product_price_1kg(message: Message, state: FSMContext):
     """Start background generation and immediately ask for photo."""
+    logger.info(f"Price 1kg entered: {message.text} for user {message.from_user.id}")
     try:
         price_1kg = int(message.text)
         data = await state.get_data()
@@ -929,6 +1039,7 @@ async def process_product_price_1kg(message: Message, state: FSMContext):
             
         async def background_gen_task():
             try:
+                logger.info(f"Starting background AI generation for {data['name_ua']} (User: {user_id})")
                 desc = await generate_product_description(
                     name=data['name_ua'], 
                     notes=data.get('tasting_notes', []),
@@ -938,10 +1049,14 @@ async def process_product_price_1kg(message: Message, state: FSMContext):
                     price_300g=data.get('price_300g', 0),
                     price_1kg=price_1kg
                 )
+                logger.info(f"Background AI generation successful for {data['name_ua']}")
                 return desc
+            except asyncio.CancelledError:
+                logger.warning(f"AI generation cancelled for {data['name_ua']}")
+                raise
             except Exception as e:
-                logger.error(f"Background AI generation failed: {e}")
-                return f"☕ <b>{data.get('name_ua')}</b>. Ваша ідеальна чашка кави вже чекає!"
+                logger.error(f"Background AI generation failed for {data['name_ua']}: {e}")
+                return f"☕ <b>{data.get('name_ua')}</b>. Свіжосмажена кава від Monkeys Coffee. Смачного!"
 
         active_ai_tasks[user_id] = asyncio.create_task(background_gen_task())
         
@@ -949,7 +1064,7 @@ async def process_product_price_1kg(message: Message, state: FSMContext):
         await state.set_state(AdminStates.waiting_for_product_image)
         
         await message.answer(
-            "🖼️ <b>Крок 7: Зображення товару</b>\n\n"
+            "🖼️ <b>Крок 8/8: Зображення товару</b>\n\n"
             "Надішліть фото або натисніть кнопку нижче, щоб пропустити:",
             reply_markup=get_skip_image_keyboard(),
             parse_mode="HTML"
@@ -968,16 +1083,22 @@ async def process_product_skip_image(callback: CallbackQuery, state: FSMContext)
     if user_id in active_ai_tasks:
         try:
             # Wait for background task with timeout
-            description = await asyncio.wait_for(active_ai_tasks[user_id], timeout=30.0)
+            logger.info(f"Awaiting AI task for user {user_id}...")
+            description = await asyncio.wait_for(active_ai_tasks[user_id], timeout=35.0)
         except asyncio.TimeoutError:
-            logger.warning(f"Background task for {user_id} timed out")
+            logger.warning(f"Background task for {user_id} timed out after 35s")
             description = f"🔥 <b>{(await state.get_data()).get('name_ua')}</b>. Досконалий лот для справжніх поціновувачів кави."
         except Exception as e:
             logger.error(f"Error awaiting background task: {e}")
-            description = "☕ Ваша кава."
+            description = f"☕ <b>{(await state.get_data()).get('name_ua')}</b>. Смачного!"
         finally:
             active_ai_tasks.pop(user_id, None)
     
+    if not description:
+        # Check if description was pre-set (for non-coffee models)
+        current_data = await state.get_data()
+        description = current_data.get('description')
+            
     if not description:
         description = "☕ Кава."
             
@@ -1006,6 +1127,11 @@ async def process_product_image_upload(message: Message, state: FSMContext):
             description = "☕ Смачна кава."
         finally:
             active_ai_tasks.pop(user_id, None)
+
+    if not description:
+        # Check if description was pre-set (for non-coffee models)
+        current_data = await state.get_data()
+        description = current_data.get('description')
 
     if not description:
         description = "☕ Кава."
@@ -1070,6 +1196,7 @@ async def show_product_preview(message: Message, state: FSMContext):
 @router.message(AdminStates.waiting_for_product_confirm_generated)
 async def finalize_product_add(message: Message, state: FSMContext, session: AsyncSession):
     """Finalize product addition with custom or generated description."""
+    logger.info(f"Finalize product add triggered by user {message.from_user.id} with text: {message.text}")
     try:
         # DEBUG: Check if handler is called
         # await message.answer("DEBUG: Entering finalize_product_add")

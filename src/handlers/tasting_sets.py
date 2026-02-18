@@ -352,7 +352,8 @@ async def show_gift_sets(message: Message, session: AsyncSession):
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_main_menu(callback: CallbackQuery):
     """Return to main menu."""
-    from src.keyboards.main_menu import get_main_menu_keyboard
+    from src.keyboards.main_menu import get_main_menu_keyboard, get_admin_main_menu_keyboard
+    from config import settings
     
     text = """
 <b>☕ Monkeys Coffee Roasters</b>
@@ -361,11 +362,10 @@ async def back_to_main_menu(callback: CallbackQuery):
 
 Оберіть розділ:
 """
-    keyboard = get_main_menu_keyboard()
+    is_admin = callback.from_user.id in settings.admin_id_list
+    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
     
-    # Use edit_text to avoid creating new messages
-    try:
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    # Send NEW message to restore ReplyKeyboardMarkup (cannot be edited into existence)
+    await callback.message.delete()
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
