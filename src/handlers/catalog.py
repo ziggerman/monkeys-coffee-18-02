@@ -74,6 +74,7 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
     
     if isinstance(event, Message):
         from src.utils.message_manager import delete_previous, save_message
+        await state.clear() # Clear any active flows
         await delete_previous(event, state)
         if photo:
             sent = await event.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")

@@ -142,6 +142,7 @@ async def show_main_menu(message: Message, session: AsyncSession, state: FSMCont
     keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
     
     from src.utils.message_manager import delete_previous, save_message
+    await state.clear()
     await delete_previous(message, state)
     sent = await message.answer(
         "🟢 <b>Головне Меню</b> 🐒\n\nКуди попрямуємо?",

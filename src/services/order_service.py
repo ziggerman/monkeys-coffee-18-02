@@ -111,9 +111,6 @@ class OrderService:
         if promo_code_obj:
             promo_code_obj.used_count += 1
         
-        # Clear cart
-        await CartService.clear_cart(session, user.id)
-        
         await session.commit()
         await session.refresh(order)
         
