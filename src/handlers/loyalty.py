@@ -74,7 +74,7 @@ async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSess
         f"• Всього кави: <b>{user.total_purchased_kg:.1f} кг</b>\n"
         f"{progress_info}"
         f"{UIStyle.BOLD_DIVIDER}\n"
-        f"💡 <i>Від 2 кг (або 6 пачок) в одному чеку — твоя особиста знижка +25%.</i>"
+        f"💡 <i>Від 2 кг в одному чеку — твоя особиста знижка +25%.</i>"
     )
     
     # Get dynamic image
