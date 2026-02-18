@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="160" viewBox="0 0 600 160" role="img" aria-label="Palette swatches">
+  <style>
+    .label { font-family: Inter, Arial, sans-serif; font-size:12px; fill:#1F1F1F }
+    .hex { font-family: monospace; font-size:11px; fill:#1F1F1F }
+  </style>
+
+  <!-- Olive 500 -->
+  <rect x="10" y="10" width="140" height="60" rx="8" fill="#6B8E23" />
+  <text x="20" y="85" class="label">Olive — primary</text>
+  <text x="20" y="100" class="hex">#6B8E23</text>
+
+  <!-- Olive 700 -->
+  <rect x="170" y="10" width="140" height="60" rx="8" fill="#53661B" />
+  <text x="180" y="85" class="label">Olive dark</text>
+  <text x="180" y="100" class="hex">#53661B</text>
+
+  <!-- Olive 300 -->
+  <rect x="330" y="10" width="140" height="60" rx="8" fill="#9FB86B" />
+  <text x="340" y="85" class="label">Olive light</text>
+  <text x="340" y="100" class="hex">#9FB86B</text>
+
+  <!-- Orange 500 -->
+  <rect x="10" y="110" width="140" height="30" rx="6" fill="#FF7A00" />
+  <text x="160" y="132" class="label">Orange — accent</text>
+  <text x="160" y="146" class="hex">#FF7A00</text>
+
+  <!-- Orange 700 -->
+  <rect x="330" y="110" width="140" height="30" rx="6" fill="#E66900" />
+  <text x="480" y="132" class="label">Orange dark</text>
+  <text x="480" y="146" class="hex">#E66900</text>
+
+</svg>

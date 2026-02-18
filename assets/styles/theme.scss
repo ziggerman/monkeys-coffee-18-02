@@ -1,0 +1,329 @@
+// SCSS-тема — Хакі (Khaki tone)
+// Змінні палітри
+$color-khaki-900: #4B5828;
+$color-khaki-700: #6B8E23;
+$color-khaki-500: #8AA24F;
+$color-khaki-300: #C7D5A4;
+
+// Відповідності для існуючих змінних (щоб мінімально лізти в інші правила)
+$color-olive-500: $color-khaki-700;
+$color-olive-700: $color-khaki-900;
+$color-olive-300: $color-khaki-300;
+
+$color-orange-500: $color-khaki-500;
+$color-orange-700: $color-khaki-900;
+
+$color-bg: #F6F7F2;
+$color-text: #1B1B13;
+$color-on-dark: #FFFFFF;
+
+// Простий кольоровий мап
+$colors: (
+  "olive-500": $color-olive-500,
+  "olive-700": $color-olive-700,
+  "olive-300": $color-olive-300,
+  "orange-500": $color-orange-500,
+  "orange-700": $color-orange-700,
+  "bg": $color-bg,
+  "text": $color-text,
+  "on-dark": $color-on-dark
+);
+
+// Міксини
+@mixin btn-base {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+@mixin btn-variant($bg, $fg: $color-on-dark, $shadow: null) {
+  background-color: $bg;
+  color: $fg;
+  @if $shadow {
+    box-shadow: $shadow;
+  }
+}
+
+// Компоненти
+.btn {
+  @include btn-base;
+}
+
+.btn-primary {
+  @include btn-variant($color-olive-500);
+}
+
+.btn-accent {
+  @include btn-variant($color-orange-500, $color-on-dark, 0 4px 10px rgba(255,122,0,0.12));
+}
+
+.card {
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(31,31,31,0.06);
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.badge-accent { background: $color-orange-500; color: $color-on-dark; }
+.badge-status { background: $color-olive-300; color: $color-text; }
+
+// Утиліти
+.text-muted { color: #6b6b6b; font-size: 13px; }
+.center { text-align: center; }
+
+// Функція доступності: повертає контраст між двома кольорами (від 1 до 21)
+@function luminance($color) {
+  $r: red($color) / 255;
+  $g: green($color) / 255;
+  $b: blue($color) / 255;
+
+  @each $c in ($r, $g, $b) {
+    @if $c <= 0.03928 {
+      $c: $c / 12.92;
+    } @else {
+      $c: pow((($c + 0.055) / 1.055), 2.4);
+    }
+  }
+
+  @return (0.2126 * $r) + (0.7152 * $g) + (0.0722 * $b);
+}
+
+// Примітка: SCSS може бути скомпільовано в CSS за допомогою вашого пайплайна.
+
+// Typographia та базові правила
+$font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+$base-font-size: 16px;
+$line-height: 1.45;
+
+html, body {
+  font-family: $font-sans;
+  font-size: $base-font-size;
+  line-height: $line-height;
+  background: $color-bg;
+  color: $color-text;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// Контейнери
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+// Хедер / навігація
+.site-header {
+  background: transparent;
+  padding: 18px 0;
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.site-logo {
+  font-weight: 800;
+  color: $color-olive-700;
+  font-size: 20px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.nav-links a {
+  color: $color-text;
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.nav-links a:hover { background: rgba(0,0,0,0.03); }
+
+// Hero
+.hero {
+  padding: 32px 0;
+}
+
+.hero-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: $color-olive-700;
+  margin-bottom: 8px;
+}
+
+.hero-sub { color: #6b6b6b; font-size: 15px; }
+
+// Grid / Product list
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.product-card {
+  @extend .card;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.product-image {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.01));
+}
+
+.product-info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.product-title { font-weight: 700; color: $color-olive-700; }
+.product-desc { color: #6b6b6b; font-size: 14px; }
+.product-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.price { font-weight:700; color: $color-text; }
+
+// Форм-контролі
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input {
+  padding: 10px 12px;
+  border: 1px solid rgba(31,31,31,0.08);
+  border-radius: 8px;
+  background: #fff;
+  color: $color-text;
+  font-size: 14px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: $color-olive-500;
+  box-shadow: 0 6px 16px rgba($color-olive-500, 0.06);
+}
+
+// Кнопки додаткові
+.btn-secondary {
+  @include btn-base;
+  background: transparent;
+  color: $color-olive-700;
+  border: 1px solid rgba(83,102,27,0.12);
+}
+
+.btn-outline {
+  @include btn-base;
+  background: transparent;
+  color: $color-orange-500;
+  border: 1px solid rgba(255,122,0,0.12);
+}
+
+// Чипи, малі елементи
+.chip { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:$color-olive-300; color:$color-text; font-size:13px; }
+
+// Footer
+.site-footer { padding: 28px 0; color: #6b6b6b; font-size: 14px; }
+
+// Responsive
+@media (max-width: 992px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .hero-title { font-size: 24px; }
+}
+
+@media (max-width: 600px) {
+  .grid { grid-template-columns: 1fr; }
+  .navbar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .site-logo { font-size: 18px; }
+}
+
+// Невелика утиліта для доступності: підрахунок контрасту (використовує luminance())
+@function contrast-ratio($a, $b) {
+  $la: luminance($a);
+  $lb: luminance($b);
+  @if $la > $lb {
+    @return ($la + 0.05) / ($lb + 0.05);
+  }
+  @return ($lb + 0.05) / ($la + 0.05);
+}
+
+// Ліве бокове меню / Sidebar
+.layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.sidebar {
+  width: 260px;
+  flex: 0 0 260px;
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(31,31,31,0.04);
+  position: sticky;
+  top: 20px;
+  height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 6px; }
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: $color-text;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.sidebar-item:hover { background: rgba(0,0,0,0.03); color: $color-olive-700; transform: translateX(2px); }
+.sidebar-item:focus { outline: none; box-shadow: 0 0 0 4px rgba(107,142,35,0.08); }
+
+.sidebar-item .icon { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+
+.sidebar-item.active {
+  background: linear-gradient(90deg, $color-olive-500, $color-olive-700);
+  color: $color-on-dark;
+  box-shadow: 0 6px 18px rgba(83,102,35,0.12);
+}
+
+.content { flex: 1; }
+
+@media (max-width: 992px) {
+  .sidebar { width: 220px; flex: 0 0 220px; height: auto; position: relative; }
+}
+
+@media (max-width: 768px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; position: relative; height: auto; }
+}
+
+

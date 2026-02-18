@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Monkeys Coffee — Khaki Demo</title>
+  <link rel="stylesheet" href="/assets/styles/theme.css">
+  <style>
+    body { padding: 28px; }
+    .demo-header { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+    .logo { width:48px; height:48px; border-radius:10px; background:var(--color-olive-700); color:var(--color-on-dark); display:flex; align-items:center; justify-content:center; font-weight:800; }
+    .hero-card { padding:18px; border-radius:12px; background:linear-gradient(180deg, rgba(107,138,35,0.06), rgba(107,138,35,0.03)); }
+  </style>
+</head>
+<body>
+  <div class="container layout">
+    <aside class="sidebar">
+      <div style="margin-bottom:12px; font-weight:700; color:var(--color-olive-700)">Навігація</div>
+      <nav class="sidebar-nav">
+        <a class="sidebar-item active" href="#home"><span class="icon">🏠</span>Головна</a>
+        <a class="sidebar-item" href="#catalog"><span class="icon">☕</span>Каталог</a>
+        <a class="sidebar-item" href="#orders"><span class="icon">📦</span>Замовлення</a>
+        <a class="sidebar-item" href="#settings"><span class="icon">⚙️</span>Налаштування</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <header class="demo-header">
+        <div class="logo">MK</div>
+        <div>
+          <h1 class="hero-title">MONKEYS COFFEE — Khaki Demo</h1>
+          <div class="hero-sub">Один тон — хакі. Це демо сторінка для WebApp.</div>
+        </div>
+      </header>
+
+      <section class="hero-card card">
+        <p>Це простий макет для перевірки нової палітри. Кнопка прикладу:</p>
+        <div style="margin-top:12px; display:flex; gap:10px;">
+          <button class="btn btn-primary">Головна дія</button>
+          <button class="btn btn-accent">Акцент</button>
+          <button class="btn btn-secondary">Другорядна</button>
+        </div>
+      </section>
+
+      <section style="margin-top:18px">
+        <div class="grid">
+          <div class="product-card">
+            <div class="product-image"></div>
+            <div class="product-info">
+              <div class="product-title">Сортування Хакі</div>
+              <div class="product-desc">Короткий опис продукту — смак, аромат, нотки.</div>
+              <div class="product-row">
+                <div class="price">₴150</div>
+                <button class="btn btn-outline">Додати</button>
+              </div>
+            </div>
+          </div>
+          <div class="product-card">
+            <div class="product-image"></div>
+            <div class="product-info">
+              <div class="product-title">Arabica Khaki</div>
+              <div class="product-desc">Опис сорту.</div>
+              <div class="product-row">
+                <div class="price">₴200</div>
+                <button class="btn btn-outline">Додати</button>
+              </div>
+            </div>
+          </div>
+          <div class="product-card">
+            <div class="product-image"></div>
+            <div class="product-info">
+              <div class="product-title">Robusta Khaki</div>
+              <div class="product-desc">Опис сорту.</div>
+              <div class="product-row">
+                <div class="price">₴120</div>
+                <button class="btn btn-outline">Додати</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+</html>

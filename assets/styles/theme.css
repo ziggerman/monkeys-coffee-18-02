@@ -1,0 +1,127 @@
+:root {
+  /* Khaki palette (compiled from theme.scss) */
+  --color-khaki-900: #4B5828;
+  --color-khaki-700: #6B8E23;
+  --color-khaki-500: #8AA24F;
+  --color-khaki-300: #C7D5A4;
+
+  --color-olive-500: var(--color-khaki-700);
+  --color-olive-700: var(--color-khaki-900);
+  --color-olive-300: var(--color-khaki-300);
+
+  --color-orange-500: var(--color-khaki-500);
+  --color-orange-700: var(--color-khaki-900);
+
+  /* Neutrals */
+  --color-bg: #F6F7F2;
+  --color-text: #1B1B13;
+  --color-on-dark: #FFFFFF;
+
+  /* Spacing / radius */
+  --radius: 8px;
+  --gap: 8px;
+}
+
+/* Базові правила */
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+/* Кнопки */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: var(--color-olive-500);
+  color: var(--color-on-dark);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-accent {
+  background: var(--color-orange-500);
+  color: var(--color-on-dark);
+  box-shadow: 0 4px 10px rgba(255,122,0,0.12);
+}
+
+/* Карточка */
+.card {
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(31,31,31,0.06);
+}
+
+/* Бейдж */
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.badge-accent { background: var(--color-orange-500); color: var(--color-on-dark); }
+.badge-status { background: var(--color-olive-300); color: var(--color-text); }
+
+/* Дрібні утиліти */
+.text-muted { color: #6b6b6b; font-size: 13px; }
+.center { text-align: center; }
+
+/* Приклад структури компонента меню */
+.menu { display: flex; gap: var(--gap); flex-wrap: wrap; }
+.menu .menu-item { flex: 1 1 auto; min-width: 120px; }
+
+/* Мобільні дрібні налаштування */
+@media (max-width: 480px) {
+  .btn { padding: 10px 16px; }
+}
+
+/* --- Скомпільовано з theme.scss (ручна генерація) --- */
+
+:root {
+  --olive-500: #6B8E23;
+  --olive-700: #53661B;
+  --olive-300: #9FB86B;
+  --orange-500: #FF7A00;
+  --orange-700: #E66900;
+  --bg: #FAF9F6;
+  --text: #1F1F1F;
+  --on-dark: #FFFFFF;
+}
+
+/* Компоненти (суміжні правила з SCSS) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-primary { background-color: var(--olive-500); color: var(--on-dark); }
+.btn-accent { background-color: var(--orange-500); color: var(--on-dark); box-shadow: 0 4px 10px rgba(255,122,0,0.12); }
+
+.badge-accent { background: var(--orange-500); color: var(--on-dark); }
+.badge-status { background: var(--olive-300); color: var(--text); }
+
+.text-muted { color: #6b6b6b; font-size: 13px; }
+.center { text-align: center; }
+
+/* Примітка: для додаткових SCSS-функцій (luminance) використовуйте пайплайн збірки Sass */

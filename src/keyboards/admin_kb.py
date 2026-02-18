@@ -1,0 +1,390 @@
+"""Admin panel keyboards."""
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+
+
+def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
+    """Get main admin panel keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="📋 Замовлення",
+        callback_data="admin_orders"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🫘 Товари",
+        callback_data="admin_products"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="📊 Аналітика",
+        callback_data="admin_analytics"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="👥 Користувачі",
+        callback_data="admin_users_main"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🖼️ Контент та Знижки",
+        callback_data="admin_content_main"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🎟️ Промокоди",
+        callback_data="admin_promos_list"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_order_management_keyboard() -> InlineKeyboardMarkup:
+    """Get order management keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="Очікують оплати",
+        callback_data="admin_orders_pending"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Оплачені",
+        callback_data="admin_orders_paid"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Відправлені",
+        callback_data="admin_orders_shipped"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Всі замовлення",
+        callback_data="admin_orders_all"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_order_action_keyboard(order_id: int, current_status: str) -> InlineKeyboardMarkup:
+    """Get order action keyboard based on status."""
+    builder = InlineKeyboardBuilder()
+    
+    if current_status == "pending":
+        builder.row(InlineKeyboardButton(
+            text="Підтвердити оплату",
+            callback_data=f"admin_order_paid:{order_id}"
+        ))
+    
+    if current_status == "paid":
+        builder.row(InlineKeyboardButton(
+            text="Відправити (ТТН)",
+            callback_data=f"admin_order_ship:{order_id}"
+        ))
+    
+    if current_status == "shipped":
+        builder.row(InlineKeyboardButton(
+            text="Позначити доставленим",
+            callback_data=f"admin_order_delivered:{order_id}"
+        ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Скасувати замовлення",
+        callback_data=f"admin_order_cancel:{order_id}"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_orders"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_admin_product_list_keyboard(products: list) -> InlineKeyboardMarkup:
+    """Get keyboard for product listing in admin panel."""
+    builder = InlineKeyboardBuilder()
+    
+    for product in products:
+        status_text = "[Активний]" if product.is_active else "[Неактивний]"
+        builder.row(InlineKeyboardButton(
+            text=f"{status_text} {product.name_ua}",
+            callback_data=f"admin_product_view:{product.id}"
+        ))
+    
+    builder.row(InlineKeyboardButton(
+        text="➕ Додати товар",
+        callback_data="admin_product_add"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_product_action_keyboard(product_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    """Get product action keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="Редагувати",
+        callback_data=f"admin_product_edit:{product_id}"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Видалити",
+        callback_data=f"admin_prod_del:{product_id}"
+    ))
+    
+    if is_active:
+        builder.row(InlineKeyboardButton(
+            text="Деактивувати",
+            callback_data=f"admin_product_deactivate:{product_id}"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="Активувати",
+            callback_data=f"admin_product_activate:{product_id}"
+        ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_products_list"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_analytics_keyboard() -> InlineKeyboardMarkup:
+    """Get analytics keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="Загальна статистика",
+        callback_data="admin_stats_general"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Звіт по знижках",
+        callback_data="admin_stats_discounts"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Лояльність рівні",
+        callback_data="admin_stats_loyalty"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Продажі за період",
+        callback_data="admin_stats_sales"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Список користувачів",
+        callback_data="admin_users_list"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Список промокодів",
+        callback_data="admin_promos_list"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_admin_users_keyboard() -> InlineKeyboardMarkup:
+    """Get user management menu keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="Список (Останні 20)",
+        callback_data="admin_users_list"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="Пошук користувача",
+        callback_data="admin_users_search"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_product_edit_fields_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Get keyboard for selecting a field to edit."""
+    builder = InlineKeyboardBuilder()
+    
+    fields = [
+        ("Назва (UA)", "name_ua"),
+        ("Походження", "origin"),
+        ("Ціна 300г", "price_300g"),
+        ("Ціна 1кг", "price_1kg"),
+        ("Профіль", "profile"),
+        ("Ступінь обсмаження", "roast_level"),
+        ("Метод обробки", "processing_method"),
+        ("Нотатки", "tasting_notes"),
+        ("Опис", "description"),
+        ("Зображення", "image"),
+    ]
+    
+    for label, field in fields:
+        builder.row(InlineKeyboardButton(
+            text=label,
+            callback_data=f"admin_product_edit_field:{product_id}:{field}"
+        ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data=f"admin_product_view:{product_id}"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_product_delete_confirm_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Get keyboard for confirming product deletion."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="ТАК, ВИДАЛИТИ",
+        callback_data=f"admin_prod_conf_del:{product_id}"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Скасувати",
+        callback_data=f"admin_product_view:{product_id}"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_roast_level_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting roast level."""
+    builder = InlineKeyboardBuilder()
+    
+    levels = [
+        ("🟡 Світле (Light)", "roast_light"),
+        ("🟠 Середнє (Medium)", "roast_medium"),
+        ("⚫ Темне (Dark)", "roast_dark"),
+        ("🥤 Еспресо (Espresso)", "roast_espresso"),
+        ("🫖 Фільтр (Filter)", "roast_filter"),
+        ("⚗️ Омні (Omni)", "roast_omni"),
+    ]
+    
+    for label, code in levels:
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_roast:{code}"))
+        
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    return builder.as_markup()
+
+
+def get_processing_method_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting processing method."""
+    builder = InlineKeyboardBuilder()
+    
+    methods = [
+        ("💧 Мита (Washed)", "proc_washed"),
+        ("☀️ Натуральна (Natural)", "proc_natural"),
+        ("🍯 Хані (Honey)", "proc_honey"),
+        ("🧪 Анаеробна (Anaerobic)", "proc_anaerobic"),
+        ("🧬 Експериментальна", "proc_experimental"),
+    ]
+    
+    for label, code in methods:
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_proc:{code}"))
+        
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    return builder.as_markup()
+
+
+def get_skip_image_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for skipping image upload."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="Пропустити крок 🖼️",
+        callback_data="admin_product_skip_image"
+    ))
+    return builder.as_markup()
+def get_product_category_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting product category."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="☕ Кава", callback_data="admin_cat:coffee"))
+    builder.row(InlineKeyboardButton(text="📦 Аксесуари / Товари", callback_data="admin_cat:equipment"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    return builder.as_markup()
+def get_content_management_keyboard() -> InlineKeyboardMarkup:
+    """Get content & discounts management keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(text="🖼️ Керування зображеннями", callback_data="admin_content_images"))
+    builder.row(InlineKeyboardButton(text="⚡ Оптові знижки", callback_data="admin_content_discounts"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    
+    return builder.as_markup()
+
+
+def get_image_management_keyboard(modules: dict) -> InlineKeyboardMarkup:
+    """Get keyboard for selecting a module to update image."""
+    builder = InlineKeyboardBuilder()
+    
+    for key, label in modules.items():
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_img_mod:{key}"))
+        
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_content_main"))
+    return builder.as_markup()
+
+
+def get_discount_management_keyboard(discounts: list) -> InlineKeyboardMarkup:
+    """Get keyboard for volume discounts management."""
+    builder = InlineKeyboardBuilder()
+    
+    for d in discounts:
+        status = "✅" if d.is_active else "❌"
+        unit = "кг" if d.discount_type == 'weight' else "уп"
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {d.threshold}{unit} -> -{d.discount_percent}%",
+            callback_data=f"admin_disc_view:{d.id}"
+        ))
+        
+    builder.row(InlineKeyboardButton(text="➕ Додати знижку", callback_data="admin_disc_add"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_content_main"))
+    return builder.as_markup()
+
+
+def get_discount_type_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for discount type selection."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⚖️ Вага (кг)", callback_data="admin_disc_type:weight"))
+    builder.row(InlineKeyboardButton(text="📦 Кількість (уп)", callback_data="admin_disc_type:packs"))
+    builder.row(InlineKeyboardButton(text="🔙 Скасувати", callback_data="admin_content_discounts"))
+    return builder.as_markup()
+
+
+def get_discount_action_keyboard(discount_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    """Get action keyboard for a specific discount."""
+    builder = InlineKeyboardBuilder()
+    
+    toggle_text = "Деактивувати ❌" if is_active else "Активувати ✅"
+    builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f"admin_disc_toggle:{discount_id}"))
+    builder.row(InlineKeyboardButton(text="Видалити 🗑️", callback_data=f"admin_disc_del:{discount_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_content_discounts"))
+    
+    return builder.as_markup()
