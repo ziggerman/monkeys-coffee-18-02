@@ -192,7 +192,10 @@ async def show_product_page(
     
     profile_name = profile_names.get(selected_profile, selected_profile)
     
-    text = f"<b>{profile_name}</b>\n{cart_text}Оберіть лот для деталей 👇"
+    # Breadcrumbs construction
+    breadcrumb = f"☕ Каталог » {profile_name}"
+    
+    text = f"<b>{breadcrumb}</b>\n\n{cart_text}Оберіть лот для деталей 👇"
     
     # Get interactive menu keyboard
     from src.keyboards.catalog_kb import get_product_list_keyboard
@@ -349,12 +352,25 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
 
     is_coffee = product.category == 'coffee'
     
+    # Breadcrumbs
+    # We try to reconstruct based on back_profile
+    profile_names = {
+        "espresso": "Еспресо",
+        "filter": "Фільтр",
+        "universal": "Універсальна",
+        "all": "Весь Арсенал",
+        "equipment": "Магазин"
+    }
+    prof_name = profile_names.get(back_profile, back_profile)
+    breadcrumb = f"☕ Каталог » {prof_name} » {product.name_ua}"
+
     if is_coffee:
         notes = format_tasting_notes(product.tasting_notes)
         roast_str = product.roast_level or "Невідомо"
         
         text = f"""
 🟢 <b>{product.name_ua}</b> 🐒
+<i>{breadcrumb}</i>
 {product.description or ''}
 ━━━━━━━━━━━━━━━━━━
 ⚙️ <b>ДЕТАЛІ ЛОТУ:</b>
@@ -370,6 +386,7 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
     else:
         text = f"""
 📦 <b>{product.name_ua}</b> 🐒
+<i>{breadcrumb}</i>
 {product.description or ''}
 ━━━━━━━━━━━━━━━━━━
 ⚙️ <b>ХАРАКТЕРИСТИКИ:</b>
@@ -413,3 +430,89 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
     await callback.answer()
 
 
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_search_query(message: Message, session: AsyncSession):
+    """Global product search by text."""
+    # Ignore specific menu commands that might have slipped through
+    if message.text in ["☕ Каталог", "🛒 Мій Кошик", "👤 Мій Кабінет", "🆘 Допомога та SOS", "🏠 Головне меню"]:
+        return
+
+    query_text = message.text.strip()
+    if len(query_text) < 3:
+        # Too short, ignore or suggest typing more
+        return
+
+    # Search by name (UA)
+    stmt = select(Product).where(
+        Product.name_ua.ilike(f"%{query_text}%"),
+        Product.is_active == True
+    )
+    result = await session.execute(stmt)
+    products = result.scalars().all()
+
+    if not products:
+        # Optional: Reply that nothing was found? 
+        # Better to be silent if it's just random chat, but for a bot, a reply is usually expected.
+        # Let's reply only if it looks like a search (no spaces, or short phrase)
+        if len(query_text.split()) < 4:
+             await message.answer(f"🔍 За запитом «{query_text}» нічого не знайдено.")
+        return
+
+    if len(products) == 1:
+        # Found exactly one - show details
+        product = products[0]
+        # Reuse existing detail view logic but we need to mock a callback or call logic directly
+        # Easiest is to send the detail message directly
+        
+        is_coffee = product.category == 'coffee'
+        if is_coffee:
+            roast_str = product.roast_level or "Невідомо"
+            text = f"""
+🟢 <b>{product.name_ua}</b> 🐒
+{product.description or ''}
+━━━━━━━━━━━━━━━━━━
+⚙️ <b>ДЕТАЛІ ЛОТУ:</b>
+• <b>Обсмажка:</b> {roast_str}
+• <b>Обробка:</b> {product.processing_method or 'Митий'}
+• <b>Сорт:</b> {product.variety or 'Арабіка'}
+• <b>Регіон:</b> {product.region or 'Секретна плантація'}
+━━━━━━━━━━━━━━━━━━
+💰 <b>ВАРТІСТЬ:</b>
+🟢 300г — <b>{format_currency(product.price_300g)}</b>
+🟠 1кг — <b>{format_currency(product.price_1kg)}</b>
+"""
+        else:
+            text = f"""
+📦 <b>{product.name_ua}</b> 🐒
+{product.description or ''}
+━━━━━━━━━━━━━━━━━━
+💰 <b>ВАРТІСТЬ:</b>
+💳 Ціна — <b>{format_currency(product.price_300g)}</b>
+"""
+        
+        keyboard = get_product_details_keyboard(product.id, back_page=0, back_profile="all")
+        image_path = get_product_image(product.id)
+        
+        if image_path and image_path.exists():
+            await message.answer_photo(FSInputFile(image_path), caption=text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            
+    else:
+        # Multiple found - show list
+        await message.answer(f"🔍 Знайдено {len(products)} товарів за запитом «{query_text}»:")
+        
+        # Show first page of results using existing pagination would be complex because 'slug' is needed.
+        # We will show a simplified list for search results.
+        
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        builder = InlineKeyboardBuilder()
+        
+        for product in products[:10]: # Limit to 10
+             builder.row(InlineKeyboardButton(
+                text=f"{product.name_ua}",
+                callback_data=f"{CallbackPrefix.CATALOG_PRODUCT}{product.id}:0:all"
+            ))
+            
+        await message.answer("Оберіть товар:", reply_markup=builder.as_markup())

@@ -11,7 +11,7 @@ from src.database.session import init_db, async_session
 from sqlalchemy import select
 
 # Import handlers
-from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils
+from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, profile, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils
 from src.utils.bot_commands import setup_bot_commands
 
 # Configure logging
@@ -56,6 +56,7 @@ async def main():
     dp.include_router(admin_categories.router)
     dp.include_router(admin_discounts.router)
     dp.include_router(start.router)
+    dp.include_router(profile.router)
     dp.include_router(catalog.router)
     dp.include_router(checkout.router)
     dp.include_router(cart.router)

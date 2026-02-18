@@ -495,26 +495,79 @@ async def process_recipient_phone(message: Message, state: FSMContext, session: 
 
 
 @router.callback_query(F.data == "checkout_edit")
-async def handle_checkout_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def handle_checkout_edit(callback: CallbackQuery, state: FSMContext):
+    """Show menu to edit specific checkout fields."""
+    from src.keyboards.checkout_kb import get_checkout_edit_keyboard
+    
+    await callback.message.edit_text(
+        "✏️ <b>Що саме ви хочете змінити?</b>",
+        reply_markup=get_checkout_edit_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "checkout_edit_delivery")
+async def edit_checkout_delivery(callback: CallbackQuery, state: FSMContext):
+    """Jump to delivery method selection."""
+    text = """
+🔴 <b>Зміна способу доставки</b> 🐒
+Оберіть зручний для вас варіант:
+🔴 <b>Нова Пошта</b> — 65 грн
+🔴 <b>Укрпошта</b> — 50 грн
+🔴 <b>Кур'єр по Києву</b> — 100 грн
+"""
+    await callback.message.edit_text(text, reply_markup=get_delivery_method_keyboard(), parse_mode="HTML")
+    await state.set_state(CheckoutStates.waiting_for_delivery_method)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "checkout_edit_city")
+async def edit_checkout_city(callback: CallbackQuery, state: FSMContext):
+    """Jump to city input."""
     data = await state.get_data()
-    order_id = data.get('order_id')
+    saved_city = data.get('delivery_city')
     
-    if order_id:
-        try:
-            # ✅ ФІКС: selectinload потрібен, щоб асинхронна сесія могла витягнути товари
-            query = select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
-            result = await session.execute(query)
-            order = result.scalar_one_or_none()
-            
-            if order and order.status == "pending":
-                await CartService.restore_cart_from_pending_order(session, callback.from_user.id, order.items)
-                await session.delete(order)
-                await session.commit()
-        except Exception as e:
-            logger.error(f"Error restoring cart from order {order_id}: {e}")
-    
-    await state.clear()
-    await show_cart(callback, session)
+    text = """
+🔴 <b>Зміна адреси</b> 🐒
+Напиши назву міста або обери збережене:
+"""
+    # Need to send new message to show ReplyKeyboard
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+        
+    keyboard = get_use_saved_keyboard(saved_city) if saved_city else get_cancel_keyboard()
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    await state.set_state(CheckoutStates.waiting_for_city)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "checkout_edit_recipient")
+async def edit_checkout_recipient(callback: CallbackQuery, state: FSMContext):
+    """Jump to recipient name input."""
+    # Need to send new message to show ReplyKeyboard (Cancel button)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+        
+    text = """
+🔴 <b>Зміна отримувача</b> 🐒
+Введіть ПІБ отримувача:
+"""
+    await callback.message.answer(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await state.set_state(CheckoutStates.waiting_for_recipient_name)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "checkout_edit_back")
+async def edit_checkout_back(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Return to order confirmation."""
+    # Re-generate preview
+    await _generate_and_send_order_preview(callback.message, state, session, callback.from_user.id)
+    await callback.answer()
 
 
 async def cancel_checkout(message: Message, state: FSMContext, session: AsyncSession):

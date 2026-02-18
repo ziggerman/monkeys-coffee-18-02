@@ -137,9 +137,37 @@ def get_profile_confirmation_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+
 def get_use_saved_keyboard(saved_value: str) -> ReplyKeyboardMarkup:
     """Get keyboard with saved value option."""
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=f"🏠 {saved_value}"))
     builder.row(KeyboardButton(text="❌ Скасувати"))
     return builder.as_markup(resize_keyboard=True)
+
+
+def get_checkout_edit_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for editing checkout details."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="🚚 Змінити доставку",
+        callback_data="checkout_edit_delivery"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="📍 Змінити місто/адресу",
+        callback_data="checkout_edit_city"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="👤 Змінити отримувача",
+        callback_data="checkout_edit_recipient"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="🔙 Назад до підтвердження",
+        callback_data="checkout_edit_back"
+    ))
+    
+    return builder.as_markup()
