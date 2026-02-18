@@ -173,6 +173,9 @@ async def generate_product_description(
     roast_lower = (roast or "").lower()
     
     # Try AI first (Professional Mode)
+    from src.services.ai_service import logger as ai_logger
+    ai_logger.info(f"Generating description for {name}...")
+    
     ai_narrative = await ai_service.generate_professional_description(
         name=name,
         origin=origin or "Секретна локація",
@@ -182,9 +185,11 @@ async def generate_product_description(
     )
     
     if ai_narrative:
+        ai_logger.info(f"AI description generated for {name}")
         base_text = ai_narrative
     else:
         # --- FALLBACK TEMPLATES (in case AI fails or no API key) ---
+        ai_logger.warning(f"AI failed for {name}, using templates.")
         
         # 1. ESPRESSO
         espresso_templates = [

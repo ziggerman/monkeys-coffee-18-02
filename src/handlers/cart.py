@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Fallbacks: match any message containing the word 'Кошик' (case-insensitive)
 @router.message(F.text.lower().contains("кошик"))
 @router.callback_query(F.data == CallbackPrefix.CART_VIEW)
-async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
+async def show_cart(event: Message | CallbackQuery, session: AsyncSession, state: FSMContext = None):
     """Display shopping cart with full discount breakdown."""
     user_id = event.from_user.id if isinstance(event, Message) else event.from_user.id
     
@@ -55,29 +55,42 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
         
         if not text:
              text = """
-🟠 <b>Твій Кошик</b> 🐒
-Тут пусто, як у понеділок зранку без кави. 😴 Час це виправляти!
+🛒 <b>Твій Кошик</b> 🐒
+
+Поки тут порожньо — але це легко виправити. ☕
 ━━━━━━━━━━━━━━━━━━━━━━
-🪵 <b>РЕКОМЕНДУЄМО:</b>
-• <b>-25% знижка</b> — при покупці кави від 2кг.
-• <b>Кенія Gachatha</b> — наш абсолютний бестселер.
+🔥 <b>ЧОМУ ВАРТО ВЗЯТИ ЗАРАЗ:</b>
+• <b>Свіжість</b> — смажимо 2-3 рази на тиждень
+• <b>-25% знижка</b> — від 2 кг в одному замовленні
+• <b>Безкоштовна доставка</b> — від 1500 грн
 ━━━━━━━━━━━━━━━━━━━━━━
+💡 <i>Кожна пачка — це свіжообсмажене зерно, упаковане з любов'ю.</i>
 """
         keyboard = get_empty_cart_keyboard()
         
         if isinstance(event, Message):
+            from src.utils.message_manager import delete_previous, save_message
+            await delete_previous(event, state)
             if MODULE_CART.exists():
                 photo = FSInputFile(MODULE_CART)
-                await event.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+                sent = await event.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
             else:
-                await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+                sent = await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            await save_message(state, sent)
         else:
-            await event.message.delete()
-            if MODULE_CART.exists():
-                photo = FSInputFile(MODULE_CART)
-                await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
-            else:
-                await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            # Callback: use edit_media
+            try:
+                if MODULE_CART.exists():
+                    from aiogram.types import InputMediaPhoto
+                    media = InputMediaPhoto(media=FSInputFile(MODULE_CART), caption=text, parse_mode="HTML")
+                    await event.message.edit_media(media=media, reply_markup=keyboard)
+                else:
+                    await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            except Exception:
+                if MODULE_CART.exists():
+                    await event.message.answer_photo(FSInputFile(MODULE_CART), caption=text, reply_markup=keyboard, parse_mode="HTML")
+                else:
+                    await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
             await event.answer()
         return
     
@@ -87,8 +100,21 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
     res_dist = await session.execute(query_dist)
     active_rules = res_dist.scalars().all()
     
+    # Load active promo code from user record
+    promo_code_obj = None
+    if user.active_promo_code:
+        promo_query = select(PromoCode).where(PromoCode.code == user.active_promo_code)
+        promo_result = await session.execute(promo_query)
+        promo_code_obj = promo_result.scalar_one_or_none()
+        # If promo is no longer valid, clear it
+        if promo_code_obj and not promo_code_obj.is_valid():
+            user.active_promo_code = None
+            await session.commit()
+            promo_code_obj = None
+    
     # Calculate discounts
-    discount_breakdown = DiscountEngine.calculate_full_discount(cart_items, user, active_rules=active_rules)
+    discount_breakdown = DiscountEngine.calculate_full_discount(cart_items, user, promo_code_obj, active_rules=active_rules)
+
     
     # Build cart display
     from src.services.content_service import ContentService
@@ -156,16 +182,14 @@ async def show_cart(event: Message | CallbackQuery, session: AsyncSession):
                 await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         except Exception as e:
             logger.warning(f"Failed to edit cart message: {e}")
-            try:
-                await event.message.delete()
-            except Exception:
-                pass
-                
+            # Do NOT delete+send — that creates new photo messages in gallery
+            # Just send a new message as fallback
             if photo:
                 await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
             else:
                 await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         await event.answer()
+
 
 
 @router.callback_query(F.data.startswith(CallbackPrefix.CART_INCREASE))
@@ -255,16 +279,25 @@ async def process_promo_code(message: Message, state: FSMContext, session: Async
         await message.answer("❌ Цей промокод більше не дійсний. Спробуйте інший або /cancel")
         return
     
-    # Save promo code to state
-    await state.update_data(promo_code=code)
+    # Save promo code to user record in DB (persists across FSM state resets)
+    user_query = select(User).where(User.id == message.from_user.id)
+    user_result = await session.execute(user_query)
+    user = user_result.scalar_one_or_none()
+    if user:
+        user.active_promo_code = code
+        await session.commit()
+    
     await state.clear()
     
     await message.answer(
         f"✅ Промокод <b>{code}</b> застосовано!\n"
-        f"Знижка: {promo_code.discount_percent}%\n\n"
-        f"Перегляньте кошик щоб побачити оновлену ціну.",
+        f"Знижка: <b>{promo_code.discount_percent}%</b>\n\n"
+        f"Знижка відображається в кошику 👇",
         parse_mode="HTML"
     )
+    # Refresh cart to show updated price
+    await show_cart(message, session)
+
 
 
 # Checkout is handled in checkout.py

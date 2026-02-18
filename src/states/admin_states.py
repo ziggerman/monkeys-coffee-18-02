@@ -33,6 +33,7 @@ class AdminStates(StatesGroup):
     waiting_for_volume_discount_type = State()
     waiting_for_volume_discount_threshold = State()
     waiting_for_volume_discount_percent = State()
+    waiting_for_volume_discount_description = State()
     
     # Text Content
     waiting_for_text_content = State()
@@ -40,5 +41,7 @@ class AdminStates(StatesGroup):
     
     # Categories
     waiting_for_category_name = State()
+    waiting_for_category_name_en = State()
     waiting_for_category_slug = State()
+    waiting_for_category_sort_order = State()
     waiting_for_category_rename = State()

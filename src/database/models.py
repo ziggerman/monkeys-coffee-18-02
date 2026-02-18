@@ -44,6 +44,10 @@ class User(Base):
     )
     referral_balance: Mapped[float] = mapped_column(Float, default=0.0)
     
+    # Active promo code (set when user applies a promo, cleared after order)
+    active_promo_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_order_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

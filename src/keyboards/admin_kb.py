@@ -11,12 +11,7 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
         text="📋 Замовлення",
         callback_data="admin_orders"
     ))
-    
-    builder.row(InlineKeyboardButton(
-        text="📂 Категорії",
-        callback_data="admin_categories"
-    ))
-    
+
     builder.row(InlineKeyboardButton(
         text="🫘 Товари",
         callback_data="admin_products"
@@ -248,6 +243,7 @@ def get_product_edit_fields_keyboard(product_id: int) -> InlineKeyboardMarkup:
         ("Нотатки", "tasting_notes"),
         ("Опис", "description"),
         ("Зображення", "image"),
+        ("Категорія", "category"),
     ]
     
     for label, field in fields:
@@ -362,30 +358,7 @@ def get_image_management_keyboard(modules: dict) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_discount_management_keyboard(discounts: list) -> InlineKeyboardMarkup:
-    """Get keyboard for volume discounts management."""
-    builder = InlineKeyboardBuilder()
-    
-    for d in discounts:
-        status = "✅" if d.is_active else "❌"
-        unit = "кг" if d.discount_type == 'weight' else "уп"
-        builder.row(InlineKeyboardButton(
-            text=f"{status} {d.threshold}{unit} -> -{d.discount_percent}%",
-            callback_data=f"admin_disc_view:{d.id}"
-        ))
-        
-    builder.row(InlineKeyboardButton(text="➕ Додати знижку", callback_data="admin_disc_add"))
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_content_main"))
-    return builder.as_markup()
 
-
-def get_discount_type_keyboard() -> InlineKeyboardMarkup:
-    """Get keyboard for discount type selection."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⚖️ Вага (кг)", callback_data="admin_disc_type:weight"))
-    builder.row(InlineKeyboardButton(text="📦 Кількість (уп)", callback_data="admin_disc_type:packs"))
-    builder.row(InlineKeyboardButton(text="🔙 Скасувати", callback_data="admin_content_discounts"))
-    return builder.as_markup()
 
 
 
@@ -415,39 +388,22 @@ def get_content_editor_keyboard(items: list) -> InlineKeyboardMarkup:
 
 
 def get_text_edit_action_keyboard(key: str) -> InlineKeyboardMarkup:
-    """Get action keyboard for text editing."""
+    """Get action keyboard for text editing — with AI generate and reset buttons."""
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🤖 AI Генерація", callback_data=f"admin_ai_gen_text:{key}"),
+        InlineKeyboardButton(text="🔄 Скинути", callback_data=f"admin_reset_text:{key}")
+    )
     builder.row(InlineKeyboardButton(text="🔙 Скасувати", callback_data="admin_content_texts"))
     return builder.as_markup()
 
 
-def get_category_management_keyboard(categories: list) -> InlineKeyboardMarkup:
-    """Get keyboard for category management."""
+def get_confirm_save_keyboard() -> InlineKeyboardMarkup:
+    """Confirm/edit/cancel keyboard after preview."""
     builder = InlineKeyboardBuilder()
-    
-    for cat in categories:
-        status = "✅" if cat.is_active else "🚫"
-        builder.row(InlineKeyboardButton(
-            text=f"{status} {cat.name_ua} ({cat.slug})",
-            callback_data=f"admin_cat_edit:{cat.id}"
-        ))
-        
-    builder.row(InlineKeyboardButton(text="➕ Додати категорію", callback_data="admin_cat_add"))
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
-    
+    builder.row(
+        InlineKeyboardButton(text="✅ Зберегти", callback_data="admin_text_save"),
+        InlineKeyboardButton(text="✏️ Редагувати", callback_data="admin_text_edit_continue")
+    )
+    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data="admin_text_cancel"))
     return builder.as_markup()
-
-
-def get_category_edit_keyboard(category_id: int, is_active: bool) -> InlineKeyboardMarkup:
-    """Get keyboard for editing a category."""
-    builder = InlineKeyboardBuilder()
-    
-    toggle_text = "Деактивувати 🚫" if is_active else "Активувати ✅"
-    
-    builder.row(InlineKeyboardButton(text="✏️ Змінити назву", callback_data=f"admin_cat_rename:{category_id}"))
-    builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f"admin_cat_toggle:{category_id}"))
-    builder.row(InlineKeyboardButton(text="🗑 Видалити", callback_data=f"admin_cat_del:{category_id}"))
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_categories"))
-    
-    return builder.as_markup()
-

@@ -3,13 +3,15 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Product, User
+from src.database.models import Product, User, Category
 from src.keyboards.catalog_kb import (
     get_format_selection_keyboard,
     get_profile_filter_keyboard,
+    get_category_keyboard,
     get_product_list_keyboard,
     get_product_details_keyboard
 )
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 @router.message(F.text == "☕ Каталог")
 @router.message(F.text == "☕ Каталог кави")
 @router.callback_query(F.data == "goto_catalog")
-async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSession):
+async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSession, state: FSMContext):
     """Show catalog start - profile selection with dynamic image."""
     from src.services.content_service import ContentService
     
@@ -37,19 +39,27 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
     t_filter = await ContentService.get_text(session, "catalog.filter")
     t_guide = await ContentService.get_text(session, "catalog.guide")
     
-    text = f"""
-🟢 <b>Кавова Карта</b> 🐒
-Оберіть профіль смаку:
+    text = """
+☕ <b>Кавова Карта Monkeys</b> 🐒
+<i>Свіжообсмажена кава — пряма з ростера до тебе.</i>
 ━━━━━━━━━━━━━━━━━━━━━━
-{t_espresso}
-{t_filter}
-🟢 <b>Універсальна</b>
-(збалансована, для будь-якого методу)
+🥤 <b>ЕСПРЕСО</b>
+Насичений, щільний, з оксамитовою крема.
+Для тих, хто любить каву такою, якою вона має бути.
+
+🫖 <b>ФІЛЬТР</b>
+Чистий смак, яскрава кислинка, квіткові та фруктові ноти.
+Ідеально для пуровера, аеропресу, кемексу.
+
+⚗️ <b>УНІВЕРСАЛЬНА</b>
+Збалансована кава для будь-якого методу заварювання.
+Підходить і для еспресо-машини, і для фільтра.
 ━━━━━━━━━━━━━━━━━━━━━━
-{t_guide}
-👇 Тицьни на кнопку нижче
+� <i>Обсмажуємо 2-3 рази на тиждень. Тільки зерно SCA 80+.</i>
+👇 Обирай свій профіль:
 """
     
+    # Always use hardcoded profile keyboard (Еспресо / Фільтр / Універсальна / Весь Арсенал / Магазин)
     keyboard = get_profile_filter_keyboard()
     
     # Get dynamic image (Roast Map)
@@ -63,10 +73,13 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
         photo = FSInputFile(CATEGORY_UNIVERSAL)
     
     if isinstance(event, Message):
+        from src.utils.message_manager import delete_previous, save_message
+        await delete_previous(event, state)
         if photo:
-            await event.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
+            sent = await event.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
         else:
-            await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            sent = await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await save_message(state, sent)
     else:
         # Handle CallbackQuery
         try:
@@ -76,12 +89,7 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
             else:
                 await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Edit failed in show_catalog_start, falling back to delete+send: {e}")
-            try:
-                await event.message.delete()
-            except Exception:
-                pass
-                
+            logger.warning(f"Edit failed in show_catalog_start: {e}")
             if photo:
                 await event.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
             else:
@@ -91,32 +99,48 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
 
 @router.callback_query(F.data.startswith(CallbackPrefix.CATALOG_PROFILE))
 async def select_profile(callback: CallbackQuery, session: AsyncSession):
-    """Handle profile selection and show product list."""
-    # Format: cat_prof:profile
-    profile = callback.data.replace(CallbackPrefix.CATALOG_PROFILE, "")
+    """Handle profile/category selection and show product list."""
+    # Format: cat_prof:slug
+    slug = callback.data.replace(CallbackPrefix.CATALOG_PROFILE, "")
     
-    # Load products for selected profile
-    if profile == "all":
-        query = select(Product).where(
-            Product.category == "coffee",
-            Product.is_active == True
-        ).order_by(Product.sort_order)
-    elif profile == "equipment":
-        query = select(Product).where(
-            Product.category == "equipment",
-            Product.is_active == True
-        ).order_by(Product.sort_order)
-    elif profile in ["espresso", "filter"]:
-        # Show specific profile + universal ones
+    # Check if this slug is a known coffee sub-profile (espresso/filter/universal)
+    # These filter within the 'coffee' category by Product.profile
+    COFFEE_PROFILES = {"espresso", "filter", "universal"}
+    
+    if slug == "all":
+        # All coffee products (any category that is NOT equipment)
+        # First try to get all non-equipment categories from DB
+        cat_query = select(Category).where(
+            Category.is_active == True,
+            Category.slug != "equipment"
+        )
+        cat_result = await session.execute(cat_query)
+        non_equip_cats = [c.slug for c in cat_result.scalars().all()]
+        
+        if non_equip_cats:
+            query = select(Product).where(
+                Product.category.in_(non_equip_cats),
+                Product.is_active == True
+            ).order_by(Product.sort_order)
+        else:
+            # Fallback: hardcoded 'coffee' category
+            query = select(Product).where(
+                Product.category == "coffee",
+                Product.is_active == True
+            ).order_by(Product.sort_order)
+    elif slug in COFFEE_PROFILES:
+        # Sub-profile filter within coffee: show matching profile + universal
         from src.utils.constants import CoffeeProfile
+        # Try to find products with this profile in any non-equipment category
         query = select(Product).where(
-            ((Product.profile == profile) | (Product.profile == CoffeeProfile.UNIVERSAL)),
-            Product.category == "coffee",
+            ((Product.profile == slug) | (Product.profile == CoffeeProfile.UNIVERSAL)),
+            Product.category != "equipment",
             Product.is_active == True
         ).order_by(Product.sort_order)
     else:
+        # Dynamic category slug — filter directly by Product.category == slug
         query = select(Product).where(
-            Product.profile == profile,
+            Product.category == slug,
             Product.is_active == True
         ).order_by(Product.sort_order)
     
@@ -128,8 +152,9 @@ async def select_profile(callback: CallbackQuery, session: AsyncSession):
         return
     
     # Show first page
-    await show_product_page(callback.message, products, 0, profile, session, callback.from_user.id, is_edit=True)
+    await show_product_page(callback.message, products, 0, slug, session, callback.from_user.id, is_edit=True)
     await callback.answer()
+
 
 
 async def show_product_page(
@@ -177,38 +202,32 @@ async def show_product_page(
     logger.info(f"Selected profile: {selected_profile}, Image path: {image_path}, Exists: {image_path.exists() if image_path else 'None'}")
     
     if is_edit:
-        # Try to edit media first to prevent flickering and duplicates
+        # Always try edit_media first — never delete+send for callbacks (causes gallery accumulation)
         try:
             if image_path and image_path.exists():
-                logger.info("Attempting edit_media...")
                 media = InputMediaPhoto(media=FSInputFile(image_path), caption=text, parse_mode="HTML")
                 await message.edit_media(media=media, reply_markup=keyboard)
-                logger.info("edit_media success")
             else:
-                logger.info("Attempting edit_text...")
                 await message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         except Exception as e:
-            # Only fallback to delete+send if edit failed (e.g. type mismatch)
-            # But do NOT suppress "Message not found" if called explicitly, 
-            # though here we are in a fallback.
-            logger.warning(f"Edit details failed, falling back to delete+send: {e}")
+            logger.warning(f"Edit failed in show_product_page: {e}")
+            # Only fallback to delete+send if edit truly failed AND delete succeeds
             try:
                 await message.delete()
-            except Exception as e:
-                # If delete fails (e.g. double click race), STOP. Do not send duplicate.
-                logger.warning(f"Delete failed in fallback (preventing duplicate): {e}")
-                return
-                
+            except Exception as del_e:
+                logger.warning(f"Delete also failed (preventing duplicate): {del_e}")
+                return  # Stop — do not send duplicate
             if image_path and image_path.exists():
                 await message.answer_photo(FSInputFile(image_path), caption=text, reply_markup=keyboard, parse_mode="HTML")
             else:
                 await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        # First show
+        # First show (from a Message, not a callback) — always send new
         if image_path and image_path.exists():
             await message.answer_photo(FSInputFile(image_path), caption=text, reply_markup=keyboard, parse_mode="HTML")
         else:
             await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
 
 
 @router.callback_query(F.data.startswith(CallbackPrefix.CATALOG_PAGE))
@@ -219,31 +238,42 @@ async def change_page(callback: CallbackQuery, session: AsyncSession):
     page = int(parts[0])
     selected_profile = parts[1]
     
-    # Reload products
-    logger.info(f"Changing page to {page} for profile {selected_profile}")
+    # Reload products using same logic as select_profile
+    logger.info(f"Changing page to {page} for slug {selected_profile}")
+    COFFEE_PROFILES = {"espresso", "filter", "universal"}
+    
     if selected_profile == "all":
-        query = select(Product).where(
-            Product.category == "coffee",
-            Product.is_active == True
-        ).order_by(Product.sort_order)
-    elif selected_profile == "equipment":
-        query = select(Product).where(
-            Product.category == "equipment",
-            Product.is_active == True
-        ).order_by(Product.sort_order)
-    elif selected_profile in ["espresso", "filter"]:
-        # Show specific profile + universal ones
+        cat_query = select(Category).where(
+            Category.is_active == True,
+            Category.slug != "equipment"
+        )
+        cat_result = await session.execute(cat_query)
+        non_equip_cats = [c.slug for c in cat_result.scalars().all()]
+        
+        if non_equip_cats:
+            query = select(Product).where(
+                Product.category.in_(non_equip_cats),
+                Product.is_active == True
+            ).order_by(Product.sort_order)
+        else:
+            query = select(Product).where(
+                Product.category == "coffee",
+                Product.is_active == True
+            ).order_by(Product.sort_order)
+    elif selected_profile in COFFEE_PROFILES:
         from src.utils.constants import CoffeeProfile
         query = select(Product).where(
             ((Product.profile == selected_profile) | (Product.profile == CoffeeProfile.UNIVERSAL)),
-            Product.category == "coffee",
+            Product.category != "equipment",
             Product.is_active == True
         ).order_by(Product.sort_order)
     else:
+        # Dynamic category slug
         query = select(Product).where(
-            Product.profile == selected_profile,
+            Product.category == selected_profile,
             Product.is_active == True
         ).order_by(Product.sort_order)
+
     
     result = await session.execute(query)
     products = result.scalars().all()
@@ -326,8 +356,6 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
 🟢 <b>{product.name_ua}</b> 🐒
 {product.description or ''}
 ━━━━━━━━━━━━━━━━━━
-🟠 <b>ПРОФІЛЬ СМАКУ:</b>
-{notes}
 ⚙️ <b>ДЕТАЛІ ЛОТУ:</b>
 • <b>Обсмажка:</b> {roast_str}
 • <b>Обробка:</b> {product.processing_method or 'Митий'}
@@ -356,20 +384,31 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
     # Try to get product image
     image_path = get_product_image(product.id)
     
-    if image_path and image_path.exists():
-        photo = FSInputFile(image_path)
-        # We need to delete old message and send new photo message
-        await callback.message.delete()
-        await callback.message.answer_photo(photo, caption=text, reply_markup=keyboard, parse_mode="HTML")
-    else:
-        # Fallback to text edit if no image
+    # Always use edit_media to avoid creating new messages (which accumulate in gallery)
+    try:
+        if image_path and image_path.exists():
+            media = InputMediaPhoto(
+                media=FSInputFile(image_path),
+                caption=text,
+                parse_mode="HTML"
+            )
+            await callback.message.edit_media(media=media, reply_markup=keyboard)
+        else:
+            try:
+                await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+            except Exception:
+                await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"edit_media failed in show_product_details: {e}")
         try:
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        except Exception:
-            # If we are coming from a photo message but don't have a new photo, 
-            # we might need to delete and send text
             await callback.message.delete()
+        except Exception:
+            pass
+        if image_path and image_path.exists():
+            await callback.message.answer_photo(FSInputFile(image_path), caption=text, reply_markup=keyboard, parse_mode="HTML")
+        else:
             await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-            
+        
     await callback.answer()
+
 

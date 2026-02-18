@@ -3,6 +3,7 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, session: AsyncSession, user: User = None):
+async def cmd_start(message: Message, session: AsyncSession, state: FSMContext, user: User = None):
     """Handle /start command and referral codes."""
     user_id = message.from_user.id
     
@@ -66,38 +67,40 @@ async def cmd_start(message: Message, session: AsyncSession, user: User = None):
     if is_new_user:
         welcome_text = f"""
 🟢 <b>Привіт, {user.first_name}!</b> 🐒
-Ласкаво просимо до <b>Monkeys Coffee Roasters</b>. Тут ми смажимо каву, яка змінює ранок. 🟢
-━━━━━━━━━━━━━━━━━━━━━━
-🟠 <b>НАШІ ПЕРЕВАГИ:</b>
-• Спешелті зерно (SCA 80+)
-• Знижки для тих, хто бере багато
-• Кешбек у вигляді міцних бонусів
-• Безкоштовна доставка від 1500 грн
-━━━━━━━━━━━━━━━━━━━━━━
-🟠 <b>ЯК ЕКОНОМИТИ:</b>
-🟢 6+ пачок по 300г ➜ <b>-25%</b>
-🟠 2+ кг ➜ <b>-25%</b>
 
-Тисни на кнопки внизу, і погнали обирати! 👇
+Ти завітав нас в світ справжньої кави. Тут немає компромісів — тільки зерно SCA 80+, свіже обсмажене і з душею. ☕
+━━━━━━━━━━━━━━━━━━━━━━
+🟠 <b>ЩО ТЕБЕ ЧЕКАЄ:</b>
+• <b>Свіжа кава</b> — обсмажуємо 2-3 рази на тиждень
+• <b>-25% знижка</b> — від 2 кг в одному чеку
+• <b>Безкоштовна доставка</b> — від 1500 грн
+• <b>Кешбек бонусами</b> — за кожне замовлення
+━━━━━━━━━━━━━━━━━━━━━━
+👇 Обирай свій перший сорт:
 """
-        
         if referral_code:
-            welcome_text += "\n🎁 <b>О, ти від друга!</b> Зараховано бонус 100 грн на перше замовлення."
-    
+            welcome_text += "\n🎁 <b>Ти прийшов від друга!</b> Бонус 100 грн на перше замовлення вже чекає. 🤝"
     else:
         welcome_text = f"""
 🟢 <b>З поверненням, {user.first_name}!</b> 🐒
-Запаси закінчуються? Чи просто захотілось чогось новенького?
-Наші ростери вже попрацювали, свіжа партія чекає. 🟢
-Обирай, що будемо пити цього разу 👇
+
+Запаси закінчуються? Чи просто хочеться чогось нового? ☕
+Наші ростери вже попрацювали — свіжа партія чекає.
+━━━━━━━━━━━━━━━━━━━━━━
+👇 Обирай, що будемо пити цього разу:
 """
     
     # Send with hero banner if available
+    from src.utils.message_manager import delete_previous, save_message
+    await delete_previous(message, state)
+    
     if HERO_BANNER.exists():
         photo = FSInputFile(HERO_BANNER)
-        await message.answer_photo(photo, caption=welcome_text, reply_markup=keyboard, parse_mode="HTML")
+        sent = await message.answer_photo(photo, caption=welcome_text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        await message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
+        sent = await message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
+    
+    await save_message(state, sent)
 
 
 @router.callback_query(F.data == "start")
@@ -120,33 +123,37 @@ async def callback_start(callback: CallbackQuery, session: AsyncSession, user: U
             await callback.message.edit_text(welcome_text, reply_markup=keyboard, parse_mode="HTML")
     except Exception as e:
         logger.warning(f"Failed to edit start message: {e}")
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-        await callback.message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
+        # Fallback: send new message (do NOT delete first to avoid gallery accumulation)
+        if HERO_BANNER.exists():
+            await callback.message.answer_photo(FSInputFile(HERO_BANNER), caption=welcome_text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await callback.message.answer(welcome_text, reply_markup=keyboard, parse_mode="HTML")
     
     await callback.answer()
 
 
+
 @router.message(F.text == "🏠 Головне меню")
-async def show_main_menu(message: Message, session: AsyncSession):
+async def show_main_menu(message: Message, session: AsyncSession, state: FSMContext):
     """Show main menu."""
     user_id = message.from_user.id
     is_admin = user_id in settings.admin_id_list
     
     keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
     
-    await message.answer(
+    from src.utils.message_manager import delete_previous, save_message
+    await delete_previous(message, state)
+    sent = await message.answer(
         "🟢 <b>Головне Меню</b> 🐒\n\nКуди попрямуємо?",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+    await save_message(state, sent)
 
 
 @router.message(F.text == "📖 Корисна Інфо")
 @router.message(F.text == "🐒 Про нас")
-async def show_about(message: Message, session: AsyncSession):
+async def show_about(message: Message, session: AsyncSession, state: FSMContext):
     """Show about us information with dynamic image."""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -177,24 +184,20 @@ async def show_about(message: Message, session: AsyncSession):
     from src.utils.image_constants import MODULE_ABOUT_US
     photo = await get_module_image(session, "about_us", MODULE_ABOUT_US)
     
+    from src.utils.message_manager import delete_previous, save_message
+    await delete_previous(message, state)
+    
     if photo:
-        await message.answer_photo(
-            photo, 
-            caption=about_text, 
-            reply_markup=kb.as_markup(),
-            parse_mode="HTML"
-        )
+        sent = await message.answer_photo(photo, caption=about_text, reply_markup=kb.as_markup(), parse_mode="HTML")
     else:
-        await message.answer(
-            about_text, 
-            reply_markup=kb.as_markup(),
-            parse_mode="HTML"
-        )
+        sent = await message.answer(about_text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    
+    await save_message(state, sent)
 
 
 @router.message(F.text == "🤝 Допомога та SOS")
 @router.message(F.text == "Підтримка")
-async def show_support(message: Message, session: AsyncSession):
+async def show_support(message: Message, session: AsyncSession, state: FSMContext):
     """Show support information with dynamic image."""
     support_text = """
 🟢 <b>Підтримка Monkeys</b> 🐒
@@ -217,7 +220,12 @@ async def show_support(message: Message, session: AsyncSession):
     from src.utils.image_constants import MODULE_SUPPORT
     photo = await get_module_image(session, "support", MODULE_SUPPORT)
     
+    from src.utils.message_manager import delete_previous, save_message
+    await delete_previous(message, state)
+    
     if photo:
-        await message.answer_photo(photo, caption=support_text, parse_mode="HTML")
+        sent = await message.answer_photo(photo, caption=support_text, parse_mode="HTML")
     else:
-        await message.answer(support_text, parse_mode="HTML")
+        sent = await message.answer(support_text, parse_mode="HTML")
+    
+    await save_message(state, sent)

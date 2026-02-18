@@ -1,7 +1,6 @@
 """Admin panel handler."""
 import logging
 import asyncio
-import asyncio
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, StateFilter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
@@ -11,9 +10,7 @@ from sqlalchemy import select, or_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-with open("/tmp/debug_monkeys_bot.log", "a") as f:
-    f.write("DEBUG: LOADING NEW ADMIN HANDLERS v2.1 🚀\n")
-print("DEBUG: LOADING NEW ADMIN HANDLERS v2.1 🚀")
+
 
 from src.database.models import Order, Product, User, PromoCode
 from src.services.order_service import OrderService
@@ -677,6 +674,9 @@ async def start_product_add(callback: CallbackQuery, state: FSMContext, session:
     result = await session.execute(query)
     categories = result.scalars().all()
     
+    # DEBUG LOG
+    logger.info(f"Start Product Add: Found {len(categories)} active categories: {[c.slug for c in categories]}")
+    
     await state.clear()
     await state.set_state(AdminStates.waiting_for_product_category)
     await callback.message.answer(
@@ -703,13 +703,62 @@ async def process_product_category(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.message(Command("init_categories"))
+async def cmd_init_categories(message: Message, session: AsyncSession):
+    """Restore default categories: Coffee and Shop ONLY."""
+    if not is_admin(message.from_user.id):
+        return
+
+    from src.database.models import Category
+    from sqlalchemy import update
+    
+    logger.info("CMD_INIT_CATEGORIES: Starting update...")
+    
+    # Deactivate ALL categories first
+    result = await session.execute(update(Category).values(is_active=False))
+    logger.info(f"CMD_INIT_CATEGORIES: Deactivated {result.rowcount} categories.")
+    
+    # 1. COFFEE
+    coffee_query = select(Category).where(Category.slug == "coffee")
+    coffee = await session.scalar(coffee_query)
+    if coffee:
+        coffee.is_active = True
+        coffee.name_ua = "☕ Кава"
+        coffee.sort_order = 1
+        logger.info("CMD_INIT_CATEGORIES: Activated existing 'coffee'.")
+    else:
+        session.add(Category(slug="coffee", name_ua="☕ Кава", name_en="Coffee", is_active=True, sort_order=1))
+        logger.info("CMD_INIT_CATEGORIES: Created 'coffee'.")
+        
+    # 2. SHOP (Equipment/Merch) -> mapped to 'equipment' slug but named "Магазин"
+    shop_query = select(Category).where(Category.slug == "equipment")
+    shop = await session.scalar(shop_query)
+    if shop:
+        shop.is_active = True
+        shop.name_ua = "🏪 Магазин"
+        shop.sort_order = 2
+        logger.info("CMD_INIT_CATEGORIES: Activated existing 'equipment' as 'Магазин'.")
+    else:
+        session.add(Category(slug="equipment", name_ua="🏪 Магазин", name_en="Shop", is_active=True, sort_order=2))
+        logger.info("CMD_INIT_CATEGORIES: Created 'equipment' as 'Магазин'.")
+    
+    await session.commit()
+    logger.info("CMD_INIT_CATEGORIES: Committed changes.")
+    await message.answer("✅ Категорії оновлено: тільки 'Кава' та 'Магазин'. Всі інші приховані.")
+
+
 @router.message(AdminStates.waiting_for_product_name)
 async def process_product_name(message: Message, state: FSMContext):
     """Process product name and branch based on category."""
     await state.update_data(name_ua=message.text)
     data = await state.get_data()
     
-    if data.get("category") == "equipment":
+    category = data.get("category")
+    
+    # Simple products (skip coffee specifics)
+    simple_categories = ["equipment", "merch", "other", "tea", "cocoa", "accessoties"]
+    
+    if category in simple_categories:
         # Skip coffee-specific steps, go to price
         await state.set_state(AdminStates.waiting_for_product_price_300g)
         await message.answer(
@@ -1645,6 +1694,8 @@ async def admin_product_delete_confirm(callback: CallbackQuery, session: AsyncSe
         await callback.answer(f"🗑 {name} видалено", show_alert=True)
     else:
         await callback.answer("❌ Товар вже було видалено")
+
+
         
 @router.callback_query(F.data == "admin_content_main")
 async def show_content_management(callback: CallbackQuery):
@@ -1728,148 +1779,7 @@ async def process_module_image(message: Message, state: FSMContext, session: Asy
     )
 
 
-# ---------- DISCOUNT MANAGEMENT ----------
 
-@router.callback_query(F.data == "admin_content_discounts")
-async def show_discount_management(callback: CallbackQuery, session: AsyncSession):
-    """Show list of volume discounts."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("❌ Доступ заборонено", show_alert=True)
-        return
-    
-    from src.database.models import VolumeDiscount
-    from src.keyboards.admin_kb import get_discount_management_keyboard
-    
-    query = select(VolumeDiscount).order_by(VolumeDiscount.threshold.asc())
-    result = await session.execute(query)
-    discounts = result.scalars().all()
-    
-    text = "⚡ <b>Оптові знижки</b>\n\nТут ви можете налаштувати крафтові знижки залежно від обсягу замовлення:"
-    await callback.message.edit_text(text, reply_markup=get_discount_management_keyboard(discounts), parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data == "admin_disc_add")
-async def start_discount_add(callback: CallbackQuery, state: FSMContext):
-    """Start adding new volume discount."""
-    from src.keyboards.admin_kb import get_discount_type_keyboard
-    
-    await state.set_state(AdminStates.waiting_for_volume_discount_type)
-    await callback.message.edit_text("⚖️ <b>Крок 1: Тип порогу</b>\n\nЗнижка буде рахуватися від ваги чи від кількості пачок?", reply_markup=get_discount_type_keyboard(), parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(AdminStates.waiting_for_volume_discount_type, F.data.startswith("admin_disc_type:"))
-async def process_disc_type(callback: CallbackQuery, state: FSMContext):
-    """Process type selection."""
-    disc_type = callback.data.split(":")[1]
-    await state.update_data(disc_type=disc_type)
-    
-    unit = "кг (число, можна з крапкою, напр. 2.5)" if disc_type == 'weight' else "пачок (ціле число)"
-    await state.set_state(AdminStates.waiting_for_volume_discount_threshold)
-    await callback.message.edit_text(f"🔢 <b>Крок 2: Поріг</b>\n\nВведіть мінімальну кількість {unit}:", reply_markup=None, parse_mode="HTML")
-    await callback.answer()
-
-
-@router.message(AdminStates.waiting_for_volume_discount_threshold)
-async def process_disc_threshold(message: Message, state: FSMContext):
-    """Process threshold value."""
-    try:
-        threshold = float(message.text.replace(",", "."))
-        await state.update_data(threshold=threshold)
-        await state.set_state(AdminStates.waiting_for_volume_discount_percent)
-        await message.answer("🎯 <b>Крок 3: Розмір знижки (%)</b>\n\nВведіть число від 1 до 99:", reply_markup=get_cancel_keyboard(), parse_mode="HTML")
-    except ValueError:
-        await message.answer("❌ Будь ласка, введіть числове значення.")
-
-
-@router.message(AdminStates.waiting_for_volume_discount_percent)
-async def process_disc_percent(message: Message, state: FSMContext, session: AsyncSession):
-    """Process percent and save."""
-    try:
-        percent = int(message.text)
-        if not (1 <= percent <= 99):
-            raise ValueError()
-        
-        data = await state.get_data()
-        from src.database.models import VolumeDiscount
-        
-        new_disc = VolumeDiscount(
-            discount_type=data['disc_type'],
-            threshold=data['threshold'],
-            discount_percent=percent,
-            is_active=True
-        )
-        session.add(new_disc)
-        await session.commit()
-        await state.clear()
-        
-        await message.answer(f"✅ Знижку <b>-{percent}%</b> успішно додано!", reply_markup=get_admin_main_menu_keyboard(), parse_mode="HTML")
-    except ValueError:
-        await message.answer("❌ Будь ласка, введіть ціле число від 1 до 99.")
-
-
-@router.callback_query(F.data.startswith("admin_disc_view:"))
-async def view_discount_details(callback: CallbackQuery, session: AsyncSession):
-    """View details of a specific discount."""
-    disc_id = int(callback.data.split(":")[1])
-    
-    from src.database.models import VolumeDiscount
-    from src.keyboards.admin_kb import get_discount_action_keyboard
-    
-    query = select(VolumeDiscount).where(VolumeDiscount.id == disc_id)
-    result = await session.execute(query)
-    discount = result.scalar_one_or_none()
-    
-    if not discount:
-        await callback.answer("❌ Знижку не знайдено")
-        return
-    
-    unit = "кг" if discount.discount_type == 'weight' else "пачок"
-    status = "✅ Активна" if discount.is_active else "❌ Вимкнена"
-    
-    text = f"⚡ <b>Деталі знижки:</b>\n\n" \
-           f"• Тип: {discount.discount_type}\n" \
-           f"• Поріг: {discount.threshold} {unit}\n" \
-           f"• Розмір: <b>-{discount.discount_percent}%</b>\n" \
-           f"• Статус: {status}"
-           
-    await callback.message.edit_text(text, reply_markup=get_discount_action_keyboard(discount.id, discount.is_active), parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("admin_disc_toggle:"))
-async def toggle_discount(callback: CallbackQuery, session: AsyncSession):
-    """Toggle discount active status."""
-    disc_id = int(callback.data.split(":")[1])
-    from src.database.models import VolumeDiscount
-    
-    query = select(VolumeDiscount).where(VolumeDiscount.id == disc_id)
-    result = await session.execute(query)
-    discount = result.scalar_one_or_none()
-    
-    if discount:
-        discount.is_active = not discount.is_active
-        await session.commit()
-        await callback.answer(f"Статус змінено на {'активний' if discount.is_active else 'вимкнений'}")
-        await view_discount_details(callback, session)
-
-
-@router.callback_query(F.data.startswith("admin_disc_del:"))
-async def delete_discount(callback: CallbackQuery, session: AsyncSession):
-    """Delete a discount."""
-    disc_id = int(callback.data.split(":")[1])
-    from src.database.models import VolumeDiscount
-    
-    query = select(VolumeDiscount).where(VolumeDiscount.id == disc_id)
-    result = await session.execute(query)
-    discount = result.scalar_one_or_none()
-    
-    if discount:
-        await session.delete(discount)
-        await session.commit()
-        await callback.answer("Знижку видалено")
-        await show_discount_management(callback, session)
 
 # ========== SMART EDITOR (CONTENT MANAGEMENT) ==========
 
@@ -1948,7 +1858,6 @@ async def edit_text_value_start(callback: CallbackQuery, state: FSMContext, sess
 async def process_text_content_preview(message: Message, state: FSMContext):
     """Show preview of the edited text."""
     new_text = message.text
-    # Basic HTML validation could go here
     
     await state.update_data(new_text_value=new_text)
     await state.set_state(AdminStates.waiting_for_text_content_confirm)
@@ -1959,34 +1868,202 @@ async def process_text_content_preview(message: Message, state: FSMContext):
     await message.answer(preview_text, reply_markup=get_confirm_save_keyboard(), parse_mode="HTML")
 
 
-@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_save")
+@router.callback_query(F.data == "admin_text_save")
 async def confirm_text_save(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Save the text content."""
+    current_state = await state.get_state()
+    logger.info(f"CONFIRM SAVE TRIGGERED. User: {callback.from_user.id}. State: {current_state}")
+    
+    # Check if we have the data we need, regardless of strict state match
     data = await state.get_data()
     key = data.get('edit_text_key')
     new_value = data.get('new_text_value')
     
+    if not key or not new_value:
+        await callback.answer("❌ Помилка: втрачено дані сесії. Спробуйте знову.", show_alert=True)
+        logger.error(f"Missing key/value in state data: {data}")
+        return
+
     from src.services.content_service import ContentService
     await ContentService.update_text(session, key, new_value)
     
     await state.clear()
     await callback.message.edit_text(f"✅ Текст для <b>{key}</b> успішно оновлено!", reply_markup=None, parse_mode="HTML")
     
-    # Return to updated list (need to fetch new list)
+    # Return to updated list
     await show_text_editor_menu(callback, session)
 
 
-@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_edit_continue")
+@router.callback_query(F.data == "admin_text_edit_continue")
 async def continue_text_edit(callback: CallbackQuery, state: FSMContext):
     """Go back to editing state."""
+    logger.info(f"CONTINUE EDIT TRIGGERED. State: {await state.get_state()}")
     await state.set_state(AdminStates.waiting_for_text_content)
+    
+    # Ensure key is preserved
+    data = await state.get_data()
+    if not data.get('edit_text_key'):
+         await callback.answer("❌ Помилка: втрачено ключ редагування.", show_alert=True)
+         return
+
     await callback.message.edit_text("👇 Продовжуйте редагування (надішліть виправлений текст):", reply_markup=get_cancel_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 
-@router.callback_query(AdminStates.waiting_for_text_content_confirm, F.data == "admin_text_cancel")
+@router.callback_query(F.data == "admin_text_cancel")
 async def cancel_text_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Cancel editing."""
+    logger.info(f"CANCEL EDIT TRIGGERED. State: {await state.get_state()}")
     await state.clear()
     await callback.answer("❌ Скасовано")
     await show_text_editor_menu(callback, session)
+
+
+@router.callback_query(F.data == "admin_text_edit_continue")
+async def edit_text_continue_manual(callback: CallbackQuery, state: FSMContext):
+    """Switch to manual editing after AI generation (or instead of saving)."""
+    current_state = await state.get_state()
+    logger.info(f"MANUAL EDIT TRIGGERED. Old State: {current_state}")
+    
+    await state.set_state(AdminStates.waiting_for_text_content)
+    
+    # Get the text we were previewing, if any, to show it as a starting point?
+    # Or just ask to enter new text.
+    data = await state.get_data()
+    generated_text = data.get('new_text_value', '')
+    
+    msg_text = "👇 <b>Введіть новий варіант тексту</b>"
+    if generated_text:
+        msg_text += f"\n\nПопередній варіант:\n<code>{generated_text}</code>"
+        
+    await callback.message.answer(msg_text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_text_save")
+async def save_ai_generated_text(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Save the AI generated text."""
+    data = await state.get_data()
+    key = data.get('edit_text_key')
+    new_text = data.get('new_text_value')
+    
+    if not key or not new_text:
+        await callback.answer("❌ Помилка: немає даних для збереження", show_alert=True)
+        return
+
+    from src.services.content_service import ContentService
+    await ContentService.update_text(session, key, new_text)
+    
+    await callback.answer("✅ Збережено!")
+    await show_text_editor_menu(callback, session)
+    await state.clear()
+
+
+# ========== AI GENERATION FOR SMART EDITOR ==========
+
+# Context-aware prompts for each content key
+AI_PROMPTS = {
+    "cart.empty_text": "Напиши мотивуючий текст для порожнього кошика кавового магазину Monkeys Coffee Roasters. Структура: 1) Короткий емоційний вступ (2 рядки). 2) Заклик до дії. 3) Нагадування про бонуси (знижка -25% від 2кг, безкоштовна доставка від 1500 грн). Тільки українська. Використовуй HTML теги <b> та <i>. Зроби текст чистим і читабельним.",
+    "catalog.espresso": "Напиши опис профілю Еспресо. Структура: 1) Що це таке? (1 речення). 2) Смакові особливості (булітами). 3) Для кого підходить. Тільки українська. HTML форматування.",
+    "catalog.filter": "Напиши опис профілю Фільтр. Структура: 1) Що це таке? (1 речення). 2) Смакові особливості (булітами). 3) Для кого підходить. Тільки українська. HTML форматування.",
+    "catalog.guide": "Напиши гайд по вибору кави. Структуруй булітами: • Еспресо (для чого) • Фільтр (для чого) • Універсальна. Тільки українська. HTML форматування.",
+    "cabinet.caption": "Напиши текст для розділу 'Мій Кабінет'. Структура: Привітання, Твій статус, Твої бонуси (булітами). Тільки українська. HTML форматування.",
+    "about.text": "Напиши про Monkeys Coffee Roasters. Структура: Хто ми (1 абзац), Наші цінності (булітами), Наша місія. Тільки українська. HTML форматування.",
+    "start.welcome_new": "Привітання нового клієнта. Структура: Вітаємо {name}! (заголовок), Хто ми (1 речення), Що пропонуємо (булітами: свіжа кава, швидка доставка). Тільки українська. HTML форматування.",
+    "start.welcome_return": "Привітання постійного клієнта. Структура: З поверненням {name}! (заголовок), Новинки (булітами). Тільки українська. HTML форматування.",
+    "promotions.header": "Заголовок 'Акції'. Коротко, структуровано. Перерахуй основні плюшки булітами: Опт, Рефералка, Знижки. Тільки українська. HTML форматування.",
+    "loyalty.header": "Заголовок 'Лояльність'. Коротко. Поясни рівні лояльності булітами. Тільки українська. HTML форматування.",
+    "support.header": "Заголовок 'Підтримка'. Коротке привітне повідомлення. Тільки українська. HTML форматування.",
+    "cart.header": "Заголовок Кошика. Дуже коротко, але креативно. Тільки українська. HTML форматування.",
+}
+
+DEFAULT_AI_PROMPT = "Напиши короткий, структурований текст для Telegram бота Monkeys Coffee Roasters. Використовуй заголовки та списки де доречно. Мова: українська. HTML форматування."
+
+
+@router.callback_query(F.data.startswith("admin_ai_gen_text:"))
+async def ai_generate_text_for_editor(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Generate AI text for a content key and show preview."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+
+    key = callback.data.replace("admin_ai_gen_text:", "")
+    await state.update_data(edit_text_key=key)
+
+    loading_msg = await callback.message.answer("🤖 <b>AI генерує текст...</b>\n<i>Зачекайте кілька секунд.</i>", parse_mode="HTML")
+    await callback.answer()
+
+    prompt = AI_PROMPTS.get(key, DEFAULT_AI_PROMPT)
+
+    try:
+        from src.services.ai_service import ai_service
+        
+        # New clean method with GPT-4o support
+        generated = await ai_service.generate_smart_editor_text(key, prompt)
+        
+        await loading_msg.delete()
+
+        if generated:
+            await state.update_data(new_text_value=generated)
+            await state.set_state(AdminStates.waiting_for_text_content_confirm)
+            
+            # DEBUG LOG
+            logger.info(f"AI generated text. State set to: {await state.get_state()}. Data: {await state.get_data()}")
+            
+            preview = f"🤖 <b>AI згенерував текст:</b>\n\n{generated}\n\n━━━━━━━━━━━━━━━━\nЗберегти або відредагувати?"
+            from src.keyboards.admin_kb import get_confirm_save_keyboard
+            await callback.message.answer(preview, reply_markup=get_confirm_save_keyboard(), parse_mode="HTML")
+        else:
+            # AI unavailable — show current value for manual editing
+            from src.services.content_service import ContentService
+            current = await ContentService.get_text(session, key)
+            await state.set_state(AdminStates.waiting_for_text_content)
+            await callback.message.answer(
+                f"⚠️ <b>AI недоступний</b> (вичерпана квота або помилка).\n\n"
+                f"Поточний текст:\n<code>{current}</code>\n\n"
+                f"👇 Введіть новий текст вручну:",
+                parse_mode="HTML",
+                reply_markup=get_cancel_keyboard()
+            )
+    except Exception as e:
+        logger.error(f"AI generation for editor failed: {e}")
+        await loading_msg.delete()
+        await callback.message.answer("❌ Помилка генерації. Введіть текст вручну.", reply_markup=get_cancel_keyboard())
+
+
+@router.callback_query(F.data.startswith("admin_reset_text:"))
+async def reset_text_to_default(callback: CallbackQuery, session: AsyncSession):
+    """Reset a content key to its default value."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+
+    key = callback.data.replace("admin_reset_text:", "")
+
+    from src.services.content_service import ContentService
+    default_value = await ContentService.reset_to_default(session, key)
+
+    if default_value:
+        await callback.answer("✅ Скинуто до стандартного значення!", show_alert=True)
+        # Refresh the edit screen
+        value = await ContentService.get_text(session, key)
+        from src.keyboards.admin_kb import get_text_edit_action_keyboard
+        text = (
+            f"✏️ <b>Редагування: {key}</b>\n\n"
+            f"Поточне значення:\n"
+            f"<code>{value}</code>\n\n"
+            f"👇 Введіть новий текст або скористайтесь AI:"
+        )
+        await callback.message.edit_text(text, reply_markup=get_text_edit_action_keyboard(key), parse_mode="HTML")
+    else:
+        await callback.answer("⚠️ Стандартне значення не знайдено", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("admin_text_"))
+async def debug_text_callbacks(callback: CallbackQuery, state: FSMContext):
+    """Debug handler for text callbacks that didn't match."""
+    current_state = await state.get_state()
+    logger.warning(f"⚠️ UNHANDLED TEXT CALLBACK: {callback.data} | State: {current_state}")
+    await callback.answer(f"Debug: Unhandled | State: {current_state}", show_alert=True)
+
+

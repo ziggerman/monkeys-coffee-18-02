@@ -3,6 +3,7 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 @router.message(Command("loyalty"))
 @router.message(F.text == "💎 Бонуси")
 @router.callback_query(F.data == "loyalty_program")
-async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSession, user: User = None):
+async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSession, state: FSMContext = None, user: User = None):
     """Show user's loyalty status and progress."""
     if not user:
         user_id = event.from_user.id
@@ -83,10 +84,14 @@ async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSess
     photo = await get_module_image(session, "cabinet", MODULE_LOYALTY)
     
     if isinstance(event, Message):
+        from src.utils.message_manager import delete_previous, save_message
+        await delete_previous(event, state)
         if photo:
-            await event.answer_photo(photo, caption=status_text, parse_mode="HTML")
+            sent = await event.answer_photo(photo, caption=status_text, parse_mode="HTML")
         else:
-            await event.answer(status_text, parse_mode="HTML")
+            sent = await event.answer(status_text, parse_mode="HTML")
+        await save_message(state, sent)
+
     else:
         # Handle CallbackQuery
         try:
@@ -98,15 +103,12 @@ async def show_loyalty_status(event: Message | CallbackQuery, session: AsyncSess
             else:
                 await event.message.edit_text(status_text, parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Failed to edit loyalty message, falling back to delete+send: {e}")
-            try:
-                await event.message.delete()
-            except Exception:
-                pass
-                
+            logger.warning(f"Failed to edit loyalty message: {e}")
+            # Do NOT delete+send — just send new message as last resort
             if photo:
                 await event.message.answer_photo(photo, caption=status_text, parse_mode="HTML")
             else:
                 await event.message.answer(status_text, parse_mode="HTML")
         
         await event.answer()
+

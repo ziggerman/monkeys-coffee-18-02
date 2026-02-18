@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     bot_token: str
     admin_ids: str = ""
     gemini_api_key: str = ""
+    openai_api_key: str = ""
     payment_provider_token: str = ""
     
     # Database

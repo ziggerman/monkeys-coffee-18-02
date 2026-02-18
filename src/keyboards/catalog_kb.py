@@ -31,42 +31,54 @@ def get_format_selection_keyboard() -> InlineKeyboardMarkup:
 
 
 def get_profile_filter_keyboard() -> InlineKeyboardMarkup:
-    """Get coffee profile filter keyboard."""
+    """Get coffee profile filter keyboard (static fallback)."""
     builder = InlineKeyboardBuilder()
     
-    builder.row(InlineKeyboardButton(
-        text="🥤 Еспресо",
-        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}espresso"
-    ))
-    
-    builder.row(InlineKeyboardButton(
-        text="🫖 Фільтр",
-        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}filter"
-    ))
-    
-    builder.row(InlineKeyboardButton(
-        text="⚗️ Універсальна",
-        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}universal"
-    ))
-    
-    builder.row(InlineKeyboardButton(
-        text="🫘 Весь Арсенал",
-        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}all"
-    ))
-    
-    builder.row(InlineKeyboardButton(
-        text="📦 Магазин",
-        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}equipment"
-    ))
-    
-    builder.row(InlineKeyboardButton(
-        text="🔙 Назад до меню",
-        callback_data="start"
-    ))
+    builder.row(InlineKeyboardButton(text="🥤 Еспресо", callback_data=f"{CallbackPrefix.CATALOG_PROFILE}espresso"))
+    builder.row(InlineKeyboardButton(text="🫖 Фільтр", callback_data=f"{CallbackPrefix.CATALOG_PROFILE}filter"))
+    builder.row(InlineKeyboardButton(text="⚗️ Універсальна", callback_data=f"{CallbackPrefix.CATALOG_PROFILE}universal"))
+    builder.row(InlineKeyboardButton(text="🫘 Весь Арсенал", callback_data=f"{CallbackPrefix.CATALOG_PROFILE}all"))
+    builder.row(InlineKeyboardButton(text="📦 Магазин", callback_data=f"{CallbackPrefix.CATALOG_PROFILE}equipment"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад до меню", callback_data="start"))
     
     return builder.as_markup()
+
+
+# Emoji map for well-known slugs; unknown slugs get a default emoji
+_CATEGORY_EMOJI = {
+    "coffee": "☕",
+    "espresso": "🥤",
+    "filter": "🫖",
+    "universal": "⚗️",
+    "all": "🫘",
+    "equipment": "📦",
+    "accessories": "🔧",
+    "merch": "👕",
+    "gift": "🎁",
+}
+
+
+def get_category_keyboard(categories: list) -> InlineKeyboardMarkup:
+    """Build a dynamic catalog keyboard from DB Category objects.
+    
+    Args:
+        categories: List of active Category model instances, sorted by sort_order.
+    """
+    builder = InlineKeyboardBuilder()
+    
+    for cat in categories:
+        emoji = _CATEGORY_EMOJI.get(cat.slug, "🏷️")
+        builder.row(InlineKeyboardButton(
+            text=f"{emoji} {cat.name_ua}",
+            callback_data=f"{CallbackPrefix.CATALOG_PROFILE}{cat.slug}"
+        ))
+    
+    builder.row(InlineKeyboardButton(text="🔙 Назад до меню", callback_data="start"))
     
     return builder.as_markup()
+
+
+
 
 
 def get_product_card_keyboard(

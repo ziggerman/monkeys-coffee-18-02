@@ -1,143 +1,196 @@
+"""AI Service — GPT-4o primary, Gemini fallback."""
+import asyncio
 import logging
-import google.generativeai as genai
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class AIService:
-    """Service for generating content using AI."""
-    
+    """Service for generating content using AI (GPT-4o primary, Gemini fallback)."""
+
     def __init__(self):
-        self.api_key = settings.gemini_api_key
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-            # Use gemini-flash-latest (1.5 Flash) for stability
-            self.primary_model = genai.GenerativeModel('models/gemini-flash-latest')
-            self.fallback_model = genai.GenerativeModel('models/gemini-2.0-flash-lite')
-        else:
-            self.primary_model = None
-            self.fallback_model = None
+        # --- OpenAI (primary) ---
+        self.openai_client = None
+        if settings.openai_api_key:
+            try:
+                from openai import AsyncOpenAI
+                self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+                logger.info("OpenAI client initialized (GPT-4o)")
+            except Exception as e:
+                logger.warning(f"OpenAI init failed: {e}")
 
-    async def generate_description_narrative(
-        self, 
-        name: str, 
-        origin: str, 
-        roast: str, 
-        notes: list, 
-        processing: str
-    ) -> str:
-        """Generate a punchy, cheeky 'Monkeys' style coffee narrative."""
-        if not self.primary_model:
+        # --- Gemini (fallback) ---
+        self.gemini_models = []
+        if settings.gemini_api_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=settings.gemini_api_key)
+                self.gemini_models = [
+                    genai.GenerativeModel('models/gemini-flash-lite-latest'),
+                    genai.GenerativeModel('models/gemini-2.0-flash-lite'),
+                ]
+                logger.info("Gemini fallback models initialized")
+            except Exception as e:
+                logger.warning(f"Gemini init failed: {e}")
+
+    async def _call_openai(self, prompt: str, system: str = None, timeout: float = 20.0) -> str | None:
+        """Call GPT-4o with timeout and quota error handling."""
+        if not self.openai_client:
             return None
-
-        prompt = f"""
-Ти — копірайтер бренду "MONKEYS COFFEE ROASTERS". Твій стиль: зухвалий, енергійний, професійний, але з гуримом (🐒🔥).
-Твоє завдання — написати логічний (1-2 речення) та вибуховий опис для нової кави та додати одну лаконічну пораду (💡 Порада).
-
-Дані лоту:
-- Назва: {name}
-- Походження/Регіон: {origin}
-- Обсмажка: {roast}
-- Нотки смаку: {", ".join(notes) if isinstance(notes, list) else notes}
-- Обробка: {processing}
-
-Вимоги:
-1. Використовуй емодзі (🐒, ☕, ⚡, 🤟).
-2. Опис має бути коротким — максимум 2 речення.
-3. Порада має бути практичною (метод заварювання, як заварювати, чи додавати молоко, коли пити).
-4. Мова: Українська.
-5. Не використовуй технічну інфу (обсмажка/обробка) в тексті розповіді, вона буде додана окремо. Зосередься на емоції та смаку.
-6. Вкажи назву лоту в тексті та зроби її жирною (<b>Назва</b>).
-
-Приклад структури:
-🔥 <b>Назва</b>. Зухвалий опис смаку з емоцією.
-💡 Порада: Коротка порада по справі.
-"""
-        # Try primary model
         try:
-            response = await self.primary_model.generate_content_async(prompt)
-            text = response.text.strip() if response and hasattr(response, 'text') else None
-            if text and len(text) > 10:
-                return text
-        except Exception as e:
-            logger.warning(f"Primary AI model failed: {e}. Trying fallback...")
-            
-        # Try fallback model
-        try:
-            response = await self.fallback_model.generate_content_async(prompt)
-            text = response.text.strip() if response and hasattr(response, 'text') else None
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
+            response = await asyncio.wait_for(
+                self.openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    max_tokens=600,
+                    temperature=0.85,
+                ),
+                timeout=timeout
+            )
+            text = response.choices[0].message.content.strip()
             return text if text and len(text) > 10 else None
-        except Exception as e:
-            logger.error(f"All AI models failed: {e}")
+        except asyncio.TimeoutError:
+            logger.warning("OpenAI timed out")
             return None
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "quota" in err.lower() or "insufficient_quota" in err:
+                logger.warning("OpenAI quota exhausted")
+            else:
+                logger.warning(f"OpenAI error: {e}")
+            return None
+
+    async def _call_gemini(self, prompt: str, timeout: float = 15.0) -> str | None:
+        """Call Gemini models with timeout and quota error handling."""
+        for model in self.gemini_models:
+            try:
+                response = await asyncio.wait_for(
+                    model.generate_content_async(prompt), timeout=timeout
+                )
+                text = response.text.strip() if response and hasattr(response, 'text') else None
+                if text and len(text) > 10:
+                    return text
+            except asyncio.TimeoutError:
+                logger.warning("Gemini model timed out")
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
+                    logger.warning("Gemini quota exhausted")
+                    return None
+                logger.warning(f"Gemini error: {e}")
+        return None
 
     async def generate_professional_description(
-        self, 
-        name: str, 
-        origin: str, 
-        roast: str, 
-        notes: list, 
+        self,
+        name: str,
+        origin: str,
+        roast: str,
+        notes: list,
         processing: str
-    ) -> str:
-        """Generate a professional, educational, and engaging coffee description."""
-        if not self.primary_model:
-            return None
+    ) -> str | None:
+        """Generate a professional coffee description. GPT-4o → Gemini fallback."""
 
-        prompt = f"""
-Ти — професійний шеф-бариста та обсмажчик кави в "Monkeys Coffee Roasters".
-Твоя місія — закохати людину в цю каву ще до того, як вона її скуштує.
-Твій стиль: Експертний, але зрозумілий (пояснюєш складне просто), теплий, надихаючий.
+        system = (
+            "Ти — професійний шеф-бариста та копірайтер бренду Monkeys Coffee Roasters. "
+            "Твій стиль: експертний, теплий, з характером. Пишеш тільки українською. "
+            "Використовуй HTML теги <b> та <i> для форматування."
+        )
+
+        notes_str = ", ".join(notes) if isinstance(notes, list) else str(notes)
+
+        prompt = f"""Створи професійний, структурований опис кави для інтернет-магазину.
+Опис має бути інформативним, але надихаючим.
 
 Дані лоту:
 - Назва: {name}
-- Регіон/Походження: {origin}
+- Регіон: {origin}
 - Обсмажка: {roast}
-- Нотки смаку (дескриптори): {", ".join(notes) if isinstance(notes, list) else notes}
+- Нотки смаку: {notes_str}
 - Обробка: {processing}
 
-ЗАВДАННЯ:
-Напиши опис цього лоту, який складатиметься з 3-х коротких, але змістовних блоків:
+Структура відповіді (обов'язково дотримуйся цього формату, використовуй HTML):
 
-1. 📖 **Історія та Характер** (2-3 речення):
-   Опиши загальне враження від кави. Яка вона за характером? (Яскрава, щільна, делікатна, зухвала?). Чому цей регіон/обробка круті? Поясни "на пальцях" для новачка, що він відчує.
+<b>{name}</b>
+[1 короткий абзац (до 20 слів). Вступ про походження та характер]
 
-2. 👅 **Смаковий Профіль** (1-2 речення):
-   Детальніше про смак. Як розкриваються дескриптори? Що відчувається на післясмаку? Використовуй епітети (соковитий, оксамитовий, іскристий).
+<b>📋 Деталі смаку:</b>
+• <b>Тіло:</b> [опиши тіло кави: легке, середнє, щільне тощо]
+• <b>Кислотність:</b> [опиши кислотність]
+• <b>Основні ноти:</b> {notes_str}
 
-3. 💡 **Порада Баристи** (1-2 речення):
-   Як це краще заварити? (Пуровер, еспресо, гейзер, чашка?). В який час доби краще пити? З чим смакує?
+<b>👅 Смаковий профіль:</b>
+[2-3 речення, що розкривають смакову палітру та емоцію від чашки]
 
-ВАЖЛИВО:
-- Мова: Українська.
-- Використовуй емодзі для структурування (але в міру).
-- Не використовуй занадто складні терміни без пояснень.
-- Опис має виглядати як рекомендація кращого друга, який шарить в каві.
-- Виділяй ключові слова **жирним**.
+<b>💡 Рекомендації бариста:</b>
+[Практична порада: найкращий метод заварювання та температура води]
 
-Формат виводу (приклад):
-☕ **[Назва]** — це справжня візитівка [Регіон]. Вона...
+Зроби текст "чистим", без зайвих емодзі в тексті, використовуй їх тільки як буліти (як в структурі)."""
 
-👅 **Смак:** Тут ви знайдете...
+        # Try GPT-4o first
+        result = await self._call_openai(prompt, system=system)
+        if result:
+            logger.info(f"GPT-4o generated description for {name}")
+            return result
 
-💡 **Порада:** Ідеально підійде для...
-"""
-        # Try primary model
-        try:
-            response = await self.primary_model.generate_content_async(prompt)
-            text = response.text.strip() if response and hasattr(response, 'text') else None
-            if text and len(text) > 20:
-                return text
-        except Exception as e:
-            logger.warning(f"Primary AI model failed (professional): {e}. Trying fallback...")
-            
-        # Try fallback model
-        try:
-            response = await self.fallback_model.generate_content_async(prompt)
-            text = response.text.strip() if response and hasattr(response, 'text') else None
-            return text if text and len(text) > 20 else None
-        except Exception as e:
-            logger.error(f"All AI models failed (professional): {e}")
-            return None
+        # Fallback to Gemini
+        full_prompt = f"{system}\n\n{prompt}"
+        result = await self._call_gemini(full_prompt)
+        if result:
+            logger.info(f"Gemini generated description for {name}")
+        return result
+
+    async def generate_description_narrative(
+        self,
+        name: str,
+        origin: str,
+        roast: str,
+        notes: list,
+        processing: str
+    ) -> str | None:
+        """Generate a short punchy narrative. GPT-4o → Gemini fallback."""
+
+        system = (
+            "Ти — зухвалий копірайтер Monkeys Coffee Roasters. "
+            "Стиль: енергійний, з гумором, з емодзі 🐒☕⚡. Пишеш тільки українською. "
+            "Використовуй HTML теги <b> та <i>."
+        )
+
+        notes_str = ", ".join(notes) if isinstance(notes, list) else str(notes)
+
+        prompt = f"""Напиши короткий (2 речення) вибуховий опис кави та одну практичну пораду.
+
+Дані: {name}, {origin}, обсмажка: {roast}, нотки: {notes_str}, обробка: {processing}
+
+Формат:
+🔥 <b>{name}</b>. [Зухвалий опис смаку з емоцією — 1-2 речення]
+💡 Порада: [Практична порада по заварюванню]"""
+
+        result = await self._call_openai(prompt, system=system)
+        if result:
+            return result
+        full_prompt = f"{system}\n\n{prompt}"
+        return await self._call_gemini(full_prompt)
+
+    async def generate_smart_editor_text(self, key: str, prompt: str) -> str | None:
+        """Generate text for Smart Editor content keys. GPT-4o → Gemini fallback."""
+
+        system = (
+            "Ти — копірайтер бренду Monkeys Coffee Roasters. "
+            "Пишеш тільки українською. Стиль: дружній, на-бренд, з емодзі. "
+            "Використовуй HTML теги <b> та <i> для форматування."
+        )
+
+        result = await self._call_openai(prompt, system=system)
+        if result:
+            return result
+        full_prompt = f"{system}\n\n{prompt}"
+        return await self._call_gemini(full_prompt)
 
 
 # Singleton instance

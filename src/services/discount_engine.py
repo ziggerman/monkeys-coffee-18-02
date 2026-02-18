@@ -69,6 +69,7 @@ class DiscountEngine:
     def calculate_volume_discount(
         total_packs_300g: int, 
         total_weight_kg: float,
+        subtotal: int = 0,
         active_rules: Optional[List['VolumeDiscount']] = None
     ) -> int:
         """Calculate volume discount percentage based on active rules.
@@ -86,6 +87,9 @@ class DiscountEngine:
                         best_discount = max(best_discount, rule.discount_percent)
                 elif rule.discount_type == 'weight':
                     if total_weight_kg >= rule.threshold:
+                        best_discount = max(best_discount, rule.discount_percent)
+                elif rule.discount_type == 'price':
+                    if subtotal >= rule.threshold:
                         best_discount = max(best_discount, rule.discount_percent)
             return best_discount
 
@@ -118,7 +122,7 @@ class DiscountEngine:
         total_packs, total_kg, subtotal = DiscountEngine.calculate_cart_metrics(cart_items)
         
         # Calculate volume discount
-        volume_discount = DiscountEngine.calculate_volume_discount(total_packs, total_kg, active_rules)
+        volume_discount = DiscountEngine.calculate_volume_discount(total_packs, total_kg, subtotal, active_rules)
         
         # Calculate loyalty discount
         loyalty_discount = DiscountEngine.calculate_loyalty_discount(user)

@@ -99,6 +99,13 @@ def get_order_confirmation_keyboard(order_id: int, payment_url: str = None) -> I
                 callback_data=f"checkout_pay:{order_id}"
             )
         )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="❌ Скасувати",
+            callback_data="checkout_cancel_inline"
+        )
+    )
     
     return builder.as_markup()
 

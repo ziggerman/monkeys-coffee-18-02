@@ -59,13 +59,14 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
         await state.clear()
         return
     
-    # Знижки
-    promo_code_used = data.get('promo_code')
+    # Знижки — читаємо промокод з user.active_promo_code (зберігається в БД)
+    promo_code_used = user.active_promo_code or data.get('promo_code')
     promo_code_obj = None
     if promo_code_used:
         promo_query = select(PromoCode).where(PromoCode.code == promo_code_used.upper())
         promo_result = await session.execute(promo_query)
         promo_code_obj = promo_result.scalar_one_or_none()
+
     
     query_dist = select(VolumeDiscount).where(VolumeDiscount.is_active == True)
     res_dist = await session.execute(query_dist)
@@ -93,10 +94,15 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
             grind_preference=data['grind_preference'],
             promo_code_used=promo_code_used
         )
+        # Clear the promo code after it's been applied to the order
+        if user.active_promo_code:
+            user.active_promo_code = None
+            await session.commit()
     except ValueError as e:
         await message.bot.send_message(chat_id=user_id, text=f"❌ Помилка створення замовлення: {e}")
         await state.clear()
         return
+
     
     # Формування тексту підтвердження
     text = f"""
@@ -157,12 +163,44 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
         description=f"Оплата замовлення #{order.order_number} у Monkeys Coffee"
     )
     
+    
     keyboard = get_order_confirmation_keyboard(order.id, payment_url=payment_url)
+    
+    # 🧹 Clear Reply Keyboard because we are switching to Inline flow
+    from aiogram.types import ReplyKeyboardRemove
+    clearing_msg = await message.bot.send_message(
+        chat_id=user_id,
+        text="⏳ Формуємо замовлення...",
+        reply_markup=ReplyKeyboardRemove()
+    )
     
     # Використовуємо bot.send_message замість message.answer для 100% надійності після видалення
     await message.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard, parse_mode="HTML")
+    
+    # Delete the "Clearing" message to keep chat clean
+    try:
+        await clearing_msg.delete()
+    except Exception:
+        pass
+        
     await state.set_state(CheckoutStates.confirming_order)
     await state.update_data(order_id=order.id)
+
+
+@router.callback_query(F.data == "checkout_cancel_inline")
+async def handle_checkout_cancel_inline(callback: CallbackQuery, state: FSMContext):
+    """Handle inline cancel button during checkout."""
+    await callback.message.delete()
+    await state.clear()
+    
+    user_id = callback.from_user.id
+    is_admin = user_id in settings.admin_id_list
+    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    
+    await callback.message.answer(
+        "❌ Оформлення замовлення скасовано.\n\nТовари залишилися в кошику. Ви можете продовжити покупки.",
+        reply_markup=keyboard
+    )
 
 
 # ==========================================
@@ -480,7 +518,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("checkout_tg_pay:"))
 async def process_tg_payment(callback: CallbackQuery, session: AsyncSession):
-    order_id = int(callback.data.split(":")[2])
+    order_id = int(callback.data.split(":")[1])
     
     query = select(Order).where(Order.id == order_id)
     result = await session.execute(query)
@@ -550,12 +588,18 @@ async def on_successful_payment(message: Message, session: AsyncSession):
     await CartService.clear_cart(session, message.from_user.id)
     await session.commit()
 
+    
+    # Restore Main Menu
+    is_admin = message.from_user.id in settings.admin_id_list
+    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+
     await message.answer(
         f"✅ <b>Оплата отримана!</b> 🐒\n\n"
         f"Дякуємо за замовлення <b>#{order.order_number}</b>.\n"
         f"Ми вже починаємо готувати вашу каву до відправки. ☕✨\n\n"
         f"Ви отримаєте сповіщення з трек-номером!",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=keyboard
     )
     
     for admin_id in settings.admin_id_list:

@@ -50,8 +50,8 @@ async def show_promotions(event: Message | CallbackQuery, session: AsyncSession,
     referral_link = f"t.me/{bot_info.username}?start=ref_{user.referral_code}"
     
     text = (
-        f"🔴 <b>Акції та Плюшки</b> 🐒\n"
-        f"<i>Твій доступ до кращих цін та бонусів.</i> 🎟️\n\n"
+        f"⚡ <b>Акції та Плюшки</b> 🐒\n"
+        f"<i>Хороша кава має бути доступною — тому ми придумали купу способів заощадити.</i> ☕\n\n"
     )
     
     # Dynamic Volume Discounts

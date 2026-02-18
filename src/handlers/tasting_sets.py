@@ -17,7 +17,7 @@ router = Router()
 
 @router.message(F.text == "🎁 Дегустаційні набори")
 @router.callback_query(F.data == "tasting_sets")
-async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSession):
+async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSession, state: FSMContext = None):
     """Show available tasting sets."""
     # Get all active tasting sets
     query = select(TastingSet).where(
@@ -29,26 +29,30 @@ async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSessio
     
     if not tasting_sets:
         text = """
-<b>🎁 Дегустаційні набори</b>
+<b>🎁 Дегустаційні набори</b> 🐒
 
-На жаль, зараз немає доступних наборів.
+Набори зараз в розробці — скоро будуть доступні. ☕
 
-Скористайтесь каталогом для вибору окремих сортів
-або створіть власний набір в конструкторі!
+Тим часом — завітай до каталогу і обери свій сорт самостійно!
 
-📦 Створити набір → /bundles
 ☕ Каталог → /start
 """
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="← Назад", callback_data="back_to_menu"))
         
         if isinstance(event, CallbackQuery):
-            if MODULE_TASTING_SETS.exists():
-                photo = FSInputFile(MODULE_TASTING_SETS)
-                await event.message.delete()
-                await event.message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
-            else:
-                await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            try:
+                if MODULE_TASTING_SETS.exists():
+                    from aiogram.types import InputMediaPhoto
+                    media = InputMediaPhoto(media=FSInputFile(MODULE_TASTING_SETS), caption=text, parse_mode="HTML")
+                    await event.message.edit_media(media=media, reply_markup=builder.as_markup())
+                else:
+                    await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                if MODULE_TASTING_SETS.exists():
+                    await event.message.answer_photo(FSInputFile(MODULE_TASTING_SETS), caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+                else:
+                    await event.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
             await event.answer()
         else:
             if MODULE_TASTING_SETS.exists():
@@ -127,12 +131,7 @@ async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSessio
             else:
                 await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"Failed to edit tasting sets message: {e}")
-            try:
-                await event.message.delete()
-            except Exception:
-                pass
-                
+            # Do NOT delete+send — just send new message as last resort
             if MODULE_TASTING_SETS.exists():
                 photo = FSInputFile(MODULE_TASTING_SETS)
                 await event.message.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -140,11 +139,16 @@ async def show_tasting_sets(event: Message | CallbackQuery, session: AsyncSessio
                 await event.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         await event.answer()
     else:
+        from src.utils.message_manager import delete_previous, save_message
+        await delete_previous(event, state)
         if MODULE_TASTING_SETS.exists():
             photo = FSInputFile(MODULE_TASTING_SETS)
-            await event.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            sent = await event.answer_photo(photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
         else:
-            await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            sent = await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await save_message(state, sent)
+
+
 
 
 @router.callback_query(F.data.startswith("tasting_view:"))
@@ -357,9 +361,11 @@ async def back_to_main_menu(callback: CallbackQuery):
 
 Оберіть розділ:
 """
-    
     keyboard = get_main_menu_keyboard()
     
-    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.message.delete()
+    # Use edit_text to avoid creating new messages
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
