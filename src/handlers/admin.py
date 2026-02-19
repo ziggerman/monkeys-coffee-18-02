@@ -52,9 +52,7 @@ logger = logging.getLogger(__name__)
 active_ai_tasks = {}
 
 
-def is_admin(user_id: int) -> bool:
-    """Check if user is admin."""
-    return user_id in settings.admin_id_list
+from src.utils.admin_utils import is_admin
 
 
 @router.message(StateFilter("*"), F.text == "❌ Скасувати")

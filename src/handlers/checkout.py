@@ -31,6 +31,7 @@ from src.utils.validators import validate_phone, validate_city_name, validate_ad
 from src.utils.constants import DELIVERY_METHOD_NAMES, GRIND_TYPE_NAMES, ORDER_STATUS_NAMES, DeliveryMethod
 from config import settings
 from src.handlers.cart import show_cart # Імпорт для повернення в кошик
+from src.utils.admin_utils import is_admin
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -167,8 +168,7 @@ async def _generate_and_send_order_preview(message: Message, state: FSMContext, 
     keyboard = get_order_confirmation_keyboard(order.id, payment_url=payment_url)
     
     # 🧹 Restore Main Menu Keyboard to ensure "Menu" button is visible
-    is_admin = user_id in settings.admin_id_list
-    main_kb = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    main_kb = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
     
     # First, send a small message to restore the reply keyboard (Menu icon)
     # This also helps separate the "Forming order..." from the actual content
@@ -215,8 +215,7 @@ async def handle_checkout_cancel_inline(callback: CallbackQuery, state: FSMConte
     await state.clear()
     
     user_id = callback.from_user.id
-    is_admin = user_id in settings.admin_id_list
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
     
     await callback.message.answer(
         "❌ Оформлення замовлення скасовано.\n\nТовари залишилися в кошику. Ви можете продовжити покупки.",
@@ -591,8 +590,7 @@ async def cancel_checkout(message: Message, state: FSMContext, session: AsyncSes
 
     await state.clear()
     user_id = message.from_user.id
-    is_admin = user_id in settings.admin_id_list
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
     
     await message.answer(
         "❌ Оформлення замовлення скасовано.\n\nТовари залишилися в кошику. Ви можете продовжити покупки.",
@@ -682,8 +680,7 @@ async def on_successful_payment(message: Message, session: AsyncSession):
 
     
     # Restore Main Menu
-    is_admin = message.from_user.id in settings.admin_id_list
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    keyboard = get_admin_main_menu_keyboard() if is_admin(message.from_user.id) else get_main_menu_keyboard()
 
     await message.answer(
         f"✅ <b>Оплата отримана!</b> 🐒\n\n"

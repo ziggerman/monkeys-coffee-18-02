@@ -11,6 +11,7 @@ from src.database.models import User
 from src.keyboards.main_menu import get_main_menu_keyboard, get_admin_main_menu_keyboard
 from config import settings
 from config import settings
+from src.utils.admin_utils import is_admin
 from src.utils.image_constants import HERO_BANNER, MODULE_ABOUT_US, MODULE_SUPPORT
 
 router = Router()
@@ -58,10 +59,11 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext, 
                 await session.commit()
 
     # Determine which keyboard to show
-    is_admin = user_id in settings.admin_id_list
-    logger.info(f"User {user_id} admin check: {is_admin} (Admins: {settings.admin_id_list})")
+    # Determine which keyboard to show
+    is_admin_user = is_admin(user_id)
+    logger.info(f"User {user_id} admin check: {is_admin_user}")
     
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    keyboard = get_admin_main_menu_keyboard() if is_admin_user else get_main_menu_keyboard()
     
     # Welcome message
     if is_new_user:
@@ -109,8 +111,8 @@ async def callback_start(callback: CallbackQuery, session: AsyncSession, user: U
     user_id = callback.from_user.id
     
     # Determine which keyboard to show
-    is_admin = user_id in settings.admin_id_list
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    # Determine which keyboard to show
+    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
     
     welcome_text = f"🟢 <b>Головне Меню</b> 🐒\n\nПривіт, {callback.from_user.first_name}! Обирай свій шлях:"
     
@@ -129,9 +131,7 @@ async def callback_start(callback: CallbackQuery, session: AsyncSession, user: U
 async def show_main_menu(message: Message, session: AsyncSession, state: FSMContext):
     """Show main menu."""
     user_id = message.from_user.id
-    is_admin = user_id in settings.admin_id_list
-    
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    keyboard = get_admin_main_menu_keyboard() if is_admin(user_id) else get_main_menu_keyboard()
     
     from src.utils.message_manager import delete_previous, save_message
     await state.clear()

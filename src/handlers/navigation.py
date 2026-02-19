@@ -17,8 +17,7 @@ from src.handlers.promotions import show_promotions
 router = Router()
 logger = logging.getLogger(__name__)
 
-def is_admin(user_id: int) -> bool:
-    return user_id in settings.admin_id_list
+from src.utils.admin_utils import is_admin
 
 
 @router.message(StateFilter("*"), Command("cancel"))

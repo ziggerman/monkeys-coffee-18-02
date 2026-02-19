@@ -11,6 +11,7 @@ from src.utils.formatters import format_currency
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from src.utils.image_constants import MODULE_TASTING_SETS
+from src.utils.admin_utils import is_admin
 
 router = Router()
 
@@ -362,8 +363,8 @@ async def back_to_main_menu(callback: CallbackQuery):
 
 Оберіть розділ:
 """
-    is_admin = callback.from_user.id in settings.admin_id_list
-    keyboard = get_admin_main_menu_keyboard() if is_admin else get_main_menu_keyboard()
+    is_admin_user = is_admin(callback.from_user.id)
+    keyboard = get_admin_main_menu_keyboard() if is_admin_user else get_main_menu_keyboard()
     
     # Send NEW message to restore ReplyKeyboardMarkup (cannot be edited into existence)
     await callback.message.delete()
