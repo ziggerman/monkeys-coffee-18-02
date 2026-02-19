@@ -11,14 +11,24 @@ class AIService:
 
     def __init__(self):
         # --- OpenAI (primary) ---
+        # --- OpenAI (primary) ---
         self.openai_client = None
-        if settings.openai_api_key:
+        openai_key = settings.openai_api_key
+        
+        if openai_key:
             try:
                 from openai import AsyncOpenAI
-                self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-                logger.info("OpenAI client initialized (GPT-4o)")
+                print(f"DEBUG: Initializing OpenAI client. Key starts with: {openai_key[:8]}...")
+                logger.info(f"Initializing OpenAI client. Key starts with: {openai_key[:8]}...")
+                self.openai_client = AsyncOpenAI(api_key=openai_key)
+                print("DEBUG: OpenAI client initialized successfully (GPT-4o)")
+                logger.info("OpenAI client initialized successfully (GPT-4o)")
             except Exception as e:
-                logger.warning(f"OpenAI init failed: {e}")
+                print(f"DEBUG: OpenAI init failed: {e}")
+                logger.error(f"OpenAI init failed: {e}", exc_info=True)
+        else:
+            print("DEBUG: OpenAI API Key is missing or empty in settings!")
+            logger.warning("OpenAI API Key is missing or empty in settings!")
 
         # --- Gemini (fallback) ---
         self.gemini_models = []
