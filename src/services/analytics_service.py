@@ -1,7 +1,7 @@
 """Admin panel analytics service."""
 from typing import Dict, List
 from datetime import datetime, timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Order, User, Product
@@ -13,109 +13,98 @@ class AnalyticsService:
     
     @staticmethod
     async def get_general_statistics(session: AsyncSession) -> Dict:
-        """Get general business statistics.
+        """Get general business statistics (Optimized).
         
         Returns:
             Dict with key metrics
         """
-        # Total users
-        user_count_query = select(func.count(User.id))
-        user_count_result = await session.execute(user_count_query)
-        total_users = user_count_result.scalar()
+        # Execute queries in parallel
+        queries = [
+            # 0: Total users
+            session.execute(select(func.count(User.id))),
+            # 1: Total orders & revenue (paid+)
+            session.execute(
+                select(func.count(Order.id), func.sum(Order.total))
+                .where(Order.status.in_(['paid', 'shipped', 'delivered']))
+            ),
+            # 2: Order status breakdown
+            session.execute(
+                select(Order.status, func.count(Order.id)).group_by(Order.status)
+            ),
+            # 3: Active products
+            session.execute(
+                select(func.count(Product.id)).where(Product.is_active == True)
+            )
+        ]
         
-        # Total orders
-        order_count_query = select(func.count(Order.id))
-        order_count_result = await session.execute(order_count_query)
-        total_orders = order_count_result.scalar()
+        results = await asyncio.gather(*queries)
         
-        # Total revenue (paid orders)
-        revenue_query = select(func.sum(Order.total)).where(
-            Order.status.in_(['paid', 'shipped', 'delivered'])
-        )
-        revenue_result = await session.execute(revenue_query)
-        total_revenue = revenue_result.scalar() or 0
+        # Process results
+        total_users = results[0].scalar() or 0
         
-        # Average order value
-        avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
+        paid_stats = results[1].one()
+        paid_orders_count = paid_stats[0] or 0
+        total_revenue = paid_stats[1] or 0
         
-        # Orders by status
-        pending_query = select(func.count(Order.id)).where(Order.status == 'pending')
-        pending_result = await session.execute(pending_query)
-        pending_orders = pending_result.scalar()
+        # Status map
+        status_counts = {row[0]: row[1] for row in results[2].all()}
+        total_orders = sum(status_counts.values())
         
-        paid_query = select(func.count(Order.id)).where(Order.status == 'paid')
-        paid_result = await session.execute(paid_query)
-        paid_orders = paid_result.scalar()
+        active_products = results[3].scalar() or 0
         
-        shipped_query = select(func.count(Order.id)).where(Order.status == 'shipped')
-        shipped_result = await session.execute(shipped_query)
-        shipped_orders = shipped_result.scalar()
-        
-        delivered_query = select(func.count(Order.id)).where(Order.status == 'delivered')
-        delivered_result = await session.execute(delivered_query)
-        delivered_orders = delivered_result.scalar()
-        
-        # Active products
-        active_products_query = select(func.count(Product.id)).where(Product.is_active == True)
-        active_products_result = await session.execute(active_products_query)
-        active_products = active_products_result.scalar()
+        # Calculate derived metrics
+        avg_order_value = total_revenue / paid_orders_count if paid_orders_count > 0 else 0
         
         return {
             'total_users': total_users,
             'total_orders': total_orders,
             'total_revenue': int(total_revenue),
             'avg_order_value': int(avg_order_value),
-            'pending_orders': pending_orders,
-            'paid_orders': paid_orders,
-            'shipped_orders': shipped_orders,
-            'delivered_orders': delivered_orders,
+            'pending_orders': status_counts.get('pending', 0),
+            'paid_orders': status_counts.get('paid', 0),
+            'shipped_orders': status_counts.get('shipped', 0),
+            'delivered_orders': status_counts.get('delivered', 0),
             'active_products': active_products
         }
     
     @staticmethod
     async def get_discount_statistics(session: AsyncSession) -> Dict:
-        """Get discount usage statistics.
+        """Get discount usage statistics (Optimized).
         
         Returns:
             Dict with discount metrics
         """
-        # Get all completed orders
-        orders_query = select(Order).where(
+        # Aggregate all stats in one query
+        query = select(
+            func.count(Order.id),
+            func.sum(Order.discount_volume),
+            func.sum(Order.discount_loyalty),
+            func.sum(Order.discount_promo),
+            func.sum(Order.subtotal),
+            # Count orders that had ANY discount using CASE for compatibility
+            func.sum(case(
+                ((Order.discount_volume + Order.discount_loyalty + Order.discount_promo) > 0, 1),
+                else_=0
+            ))
+        ).where(
             Order.status.in_(['paid', 'shipped', 'delivered'])
         )
-        orders_result = await session.execute(orders_query)
-        orders = orders_result.scalars().all()
         
-        if not orders:
-            return {
-                'total_orders': 0,
-                'total_discounts': 0,
-                'volume_discounts': 0,
-                'loyalty_discounts': 0,
-                'promo_discounts': 0,
-                'avg_discount_percent': 0,
-                'orders_with_discounts': 0
-            }
+        result = await session.execute(query)
+        stats = result.one()
         
-        total_discounts = sum(
-            order.discount_volume + order.discount_loyalty + order.discount_promo
-            for order in orders
-        )
+        total_orders = stats[0] or 0
+        volume_discounts = stats[1] or 0
+        loyalty_discounts = stats[2] or 0
+        promo_discounts = stats[3] or 0
+        total_subtotal = stats[4] or 0
+        orders_with_discounts = stats[5] or 0
         
-        volume_discounts = sum(order.discount_volume for order in orders)
-        loyalty_discounts = sum(order.discount_loyalty for order in orders)
-        promo_discounts = sum(order.discount_promo for order in orders)
-        
-        orders_with_discounts = sum(
-            1 for order in orders
-            if (order.discount_volume + order.discount_loyalty + order.discount_promo) > 0
-        )
-        
-        total_subtotal = sum(order.subtotal for order in orders)
+        total_discounts = volume_discounts + loyalty_discounts + promo_discounts
         avg_discount_percent = (total_discounts / total_subtotal * 100) if total_subtotal > 0 else 0
         
         return {
-            'total_orders': len(orders),
+            'total_orders': total_orders,
             'total_discounts': int(total_discounts),
             'volume_discounts': int(volume_discounts),
             'loyalty_discounts': int(loyalty_discounts),
@@ -165,7 +154,7 @@ class AnalyticsService:
         session: AsyncSession,
         days: int = 30
     ) -> Dict:
-        """Get sales statistics for recent period.
+        """Get sales statistics for recent period (Optimized).
         
         Args:
             session: Database session
@@ -175,39 +164,52 @@ class AnalyticsService:
             Dict with period statistics
         """
         start_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Orders in period
-        orders_query = select(Order).where(
+        filter_condition = [
             Order.created_at >= start_date,
             Order.status.in_(['paid', 'shipped', 'delivered'])
-        )
-        orders_result = await session.execute(orders_query)
-        orders = orders_result.scalars().all()
+        ]
         
-        if not orders:
-            return {
-                'period_days': days,
-                'total_orders': 0,
-                'total_revenue': 0,
-                'avg_order_value': 0,
-                'total_kg_sold': 0
-            }
+        # Parallel queries:
+        # 1. Aggregates (Count, Revenue)
+        # 2. Items for KG calculation (only fetched column)
+        queries = [
+            session.execute(
+                select(func.count(Order.id), func.sum(Order.total))
+                .where(*filter_condition)
+            ),
+            session.execute(
+                select(Order.items).where(*filter_condition)
+            )
+        ]
         
-        total_revenue = sum(order.total for order in orders)
-        avg_order_value = total_revenue / len(orders)
+        results = await asyncio.gather(*queries)
         
-        # Calculate total kg sold
+        # Process Aggregates
+        stats = results[0].one()
+        total_orders = stats[0] or 0
+        total_revenue = stats[1] or 0
+        
+        # Process KG
+        items_rows = results[1].all()
         total_kg = 0
-        for order in orders:
-            for item in order.items:
-                if item['format'] == '300g':
-                    total_kg += 0.3 * item['quantity']
+        
+        for row in items_rows:
+            # row[0] is the items dict/list
+            order_items = row[0]
+            if not order_items:
+                continue
+                
+            for item in order_items:
+                if item.get('format') == '300g':
+                    total_kg += 0.3 * item.get('quantity', 0)
                 else:
-                    total_kg += 1.0 * item['quantity']
+                    total_kg += 1.0 * item.get('quantity', 0)
+        
+        avg_order_value = total_revenue / total_orders if total_orders > 0 else 0
         
         return {
             'period_days': days,
-            'total_orders': len(orders),
+            'total_orders': total_orders,
             'total_revenue': int(total_revenue),
             'avg_order_value': int(avg_order_value),
             'total_kg_sold': round(total_kg, 1)

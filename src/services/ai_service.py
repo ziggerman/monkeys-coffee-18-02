@@ -99,8 +99,8 @@ class AIService:
         roast: str,
         notes: list,
         processing: str
-    ) -> str | None:
-        """Generate a professional coffee description. GPT-4o → Gemini fallback."""
+    ) -> tuple[str | None, str | None]:
+        """Generate a professional coffee description. GPT-4o → Gemini fallback. Returns (text, error)."""
 
         system = (
             "Ти — професійний шеф-бариста Monkeys Coffee. Пишеш коротко, "
@@ -123,17 +123,20 @@ class AIService:
 Пиши без води, максимум 30-40 слів."""
 
         # Try GPT-4o first
-        result, _ = await self._call_openai(prompt, system=system)
+        result, openai_error = await self._call_openai(prompt, system=system)
         if result:
             logger.info(f"GPT-4o generated description for {name}")
-            return result
+            return result, None
 
         # Fallback to Gemini
         full_prompt = f"{system}\n\n{prompt}"
-        result, _ = await self._call_gemini(full_prompt)
+        result, gemini_error = await self._call_gemini(full_prompt)
         if result:
             logger.info(f"Gemini generated description for {name}")
-        return result
+            return result, None
+
+        # Return the most relevant error
+        return None, openai_error or gemini_error
 
     async def generate_description_narrative(
         self,
@@ -142,8 +145,8 @@ class AIService:
         roast: str,
         notes: list,
         processing: str
-    ) -> str | None:
-        """Generate a short punchy narrative. GPT-4o → Gemini fallback."""
+    ) -> tuple[str | None, str | None]:
+        """Generate a short punchy narrative. GPT-4o → Gemini fallback. Returns (text, error)."""
 
         system = (
             "Ти — зухвалий копірайтер Monkeys Coffee Roasters. "
@@ -160,12 +163,17 @@ class AIService:
 Формат:
 🔥 <b>{name}</b>. [Зухвалий опис смаку з емоцією — 2-3 речення. Обов'язково згадай нотки смаку!]"""
 
-        result, _ = await self._call_openai(prompt, system=system)
+        result, openai_error = await self._call_openai(prompt, system=system)
         if result:
-            return result
+            return result, None
+
         full_prompt = f"{system}\n\n{prompt}"
-        result, _ = await self._call_gemini(full_prompt)
-        return result
+        result, gemini_error = await self._call_gemini(full_prompt)
+        
+        if result:
+            return result, None
+            
+        return None, openai_error or gemini_error
 
     async def generate_smart_editor_text(self, key: str, prompt: str) -> tuple[str | None, str | None]:
         """Generate text for Smart Editor content keys. GPT-4o → Gemini fallback. Returns (text, error)."""

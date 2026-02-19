@@ -1628,7 +1628,7 @@ async def process_admin_product_ai_gen(callback: CallbackQuery, state: FSMContex
 
         # Use the narrative generator for punchy descriptions
         from src.services.ai_service import ai_service
-        description = await ai_service.generate_description_narrative(
+        description, error = await ai_service.generate_description_narrative(
             name=product.name_ua,
             origin=product.origin or "Невідомо",
             roast=product.roast_level or "Середнє",
@@ -1649,11 +1649,15 @@ async def process_admin_product_ai_gen(callback: CallbackQuery, state: FSMContex
                 parse_mode="HTML"
             )
         else:
-            await callback.message.answer("⚠️ AI не зміг згенерувати опис. Спробуйте пізніше.")
+            error_msg = error or "Невідома помилка"
+            await callback.message.answer(f"⚠️ AI не зміг згенерувати опис.\n\n<b>Причина:</b> {error_msg}", parse_mode="HTML")
             
     except Exception as e:
         logger.error(f"Error generating description: {e}")
-        await loading_msg.delete()
+        try:
+            await loading_msg.delete()
+        except:
+            pass
         await callback.message.answer(f"❌ Помилка: {e}")
 
 
