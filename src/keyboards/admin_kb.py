@@ -428,3 +428,34 @@ def get_confirm_save_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data="admin_text_cancel"))
     return builder.as_markup()
+
+
+def get_back_keyboard(target: str) -> InlineKeyboardMarkup:
+    """Get keyboard with just a back button."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data=f"admin_product_back:{target}"))
+    return builder.as_markup()
+
+
+def get_inline_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Get inline keyboard with just a cancel button."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data="admin_main"))
+    return builder.as_markup()
+
+
+def get_product_edit_description_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Get keyboard for editing description with AI generate option."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="✨ Згенерувати з AI", callback_data=f"admin_product_ai_gen:{product_id}"))
+    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"admin_product_edit:{product_id}"))
+    return builder.as_markup()
+
+
+def get_apply_ai_text_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Get keyboard to apply AI generated text."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="✅ Застосувати", callback_data=f"admin_product_ai_apply:{product_id}"))
+    builder.row(InlineKeyboardButton(text="🔄 Спробувати ще", callback_data=f"admin_product_ai_gen:{product_id}"))
+    builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"admin_product_edit:{product_id}"))
+    return builder.as_markup()

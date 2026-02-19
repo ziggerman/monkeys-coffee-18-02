@@ -28,7 +28,12 @@ from src.keyboards.admin_kb import (
     get_roast_level_keyboard,
     get_processing_method_keyboard,
     get_skip_image_keyboard,
-    get_product_category_keyboard
+    get_skip_image_keyboard,
+    get_product_category_keyboard,
+    get_back_keyboard,
+    get_inline_cancel_keyboard,
+    get_product_edit_description_keyboard,
+    get_apply_ai_text_keyboard
 )
 from src.keyboards.main_menu import get_cancel_keyboard, get_admin_main_menu_keyboard
 from src.states.admin_states import AdminStates
@@ -762,9 +767,12 @@ async def start_product_add(callback: CallbackQuery, state: FSMContext, session:
     await callback.answer()
 
 
-@router.callback_query(AdminStates.waiting_for_product_category, F.data.startswith("admin_cat:"))
+@router.callback_query(StateFilter("*"), F.data.startswith("admin_cat:"))
 async def process_product_category(callback: CallbackQuery, state: FSMContext):
     """Process category selection and ask for name."""
+    # Ensure state is cleared if user jumps here from elsewhere (or restart)
+    await state.clear()
+    
     category = callback.data.split(":")[1]
     logger.info(f"Category selected: {category} for user {callback.from_user.id}")
     await state.update_data(category=category)
@@ -773,14 +781,7 @@ async def process_product_category(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "📝 <b>Крок 1/8: Назва товару (UA)</b>\n"
         "Введіть повну назву (наприклад: <i>V60 Drip Set</i> чи <i>Ethiopia Sidamo</i>):",
-        reply_markup=get_cancel_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
-    await callback.message.answer(
-        "📝 <b>Крок 1: Назва товару (UA)</b>\n"
-        "Введіть повну назву (наприклад: <i>V60 Drip Set</i> чи <i>Ethiopia Sidamo</i>)",
-        reply_markup=get_cancel_keyboard(),
+        reply_markup=get_inline_cancel_keyboard(),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -849,7 +850,7 @@ async def process_product_name(message: Message, state: FSMContext):
         await message.answer(
             "💰 <b>Крок 2/3: Ціна (грн)</b>\n"
             "Введіть вартість за одиницю товару:",
-            reply_markup=get_roast_level_keyboard(category=category), # Re-using back button logic
+            reply_markup=get_back_keyboard(target="name"), 
             parse_mode="HTML"
         )
     else:
@@ -859,7 +860,7 @@ async def process_product_name(message: Message, state: FSMContext):
         await message.answer(
             "🌍 <b>Крок 2/8: Походження / Регіон</b>\n"
             "Наприклад: <i>Ефіопія, Їргачефф</i> або <i>Колумбія, Уїла</i>",
-            reply_markup=get_roast_level_keyboard(category=category),
+            reply_markup=get_back_keyboard(target="name"),
             parse_mode="HTML"
         )
 
@@ -873,12 +874,6 @@ async def process_product_origin(message: Message, state: FSMContext):
         "🔥 <b>Крок 3/8: Ступінь обсмаження</b>\n"
         "Оберіть зі списку або введіть свій варіант:",
         reply_markup=get_roast_level_keyboard(category="origin"),
-        parse_mode="HTML"
-    )
-    await message.answer(
-        "🔥 <b>Крок 2: Ступінь обсмаження</b>\n"
-        "Оберіть зі списку або введіть свій варіант:",
-        reply_markup=get_roast_level_keyboard(),
         parse_mode="HTML"
     )
 @router.callback_query(AdminStates.waiting_for_product_roast_level, F.data.startswith("admin_roast:"))
@@ -970,7 +965,7 @@ async def ask_tasting_notes(message: Message, state: FSMContext):
     await message.answer(
         "📝 <b>Крок 5/8: Дискриптори (нотки смаку)</b>\n"
         "Введіть через кому. Наприклад: <i>шоколад, горіхи, карамель</i>",
-        reply_markup=get_roast_level_keyboard(category="processing"),
+        reply_markup=get_back_keyboard(target="processing"),
         parse_mode="HTML"
     )
 
@@ -984,7 +979,7 @@ async def process_product_tasting_notes(message: Message, state: FSMContext):
     await message.answer(
         "💰 <b>Крок 6/8: Ціна за 300г (грн)</b>\n"
         "Просто введіть число, наприклад: <i>450</i>",
-        reply_markup=get_roast_level_keyboard(category="notes"),
+        reply_markup=get_back_keyboard(target="tasting_notes"),
         parse_mode="HTML"
     )
 
@@ -1015,7 +1010,7 @@ async def process_product_price_300g(message: Message, state: FSMContext):
             await message.answer(
                 "💰 <b>Крок 7/8: Ціна за 1кг (грн)</b>\n"
                 "Наприклад: <i>1200</i>",
-                reply_markup=get_roast_level_keyboard(category="price_300g"),
+                reply_markup=get_back_keyboard(target="price_300g"),
                 parse_mode="HTML"
             )
     except ValueError:
@@ -1584,6 +1579,10 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, s
         result = await session.execute(query)
         categories = result.scalars().all()
         keyboard = get_product_category_keyboard(categories)
+    elif field == "description":
+        # Use simple cancel keyboard OR AI generate keyboard
+        keyboard = get_product_edit_description_keyboard(product_id)
+        
     elif field == "image":
         await state.set_state(AdminStates.waiting_for_product_edit_value)
         # get_cancel_keyboard is already imported at top level
@@ -1604,6 +1603,97 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, s
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_product_ai_gen:"))
+async def process_admin_product_ai_gen(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Generate product description using AI."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+
+    product_id = int(callback.data.split(":")[1])
+    
+    # Send loading state
+    loading_msg = await callback.message.answer("🤖 <b>AI генерує опис...</b>\n<i>Це займе кілька секунд.</i>", parse_mode="HTML")
+    await callback.answer()
+    
+    try:
+        query = select(Product).where(Product.id == product_id)
+        result = await session.execute(query)
+        product = result.scalar_one_or_none()
+        
+        if not product:
+            await loading_msg.delete()
+            await callback.message.answer("❌ Товар не знайдено.")
+            return
+
+        # Use the narrative generator for punchy descriptions
+        from src.services.ai_service import ai_service
+        description = await ai_service.generate_description_narrative(
+            name=product.name_ua,
+            origin=product.origin or "Невідомо",
+            roast=product.roast_level or "Середнє",
+            notes=product.tasting_notes or [],
+            processing=product.processing_method or "Мита"
+        )
+        
+        await loading_msg.delete()
+        
+        if description:
+            # Store generated text in state to apply later
+            await state.update_data(ai_generated_description=description)
+            
+            await callback.message.answer(
+                f"🤖 <b>AI згенерував варіант:</b>\n\n{description}\n\n"
+                "Застосувати цей опис чи спробувати ще?",
+                reply_markup=get_apply_ai_text_keyboard(product_id),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer("⚠️ AI не зміг згенерувати опис. Спробуйте пізніше.")
+            
+    except Exception as e:
+        logger.error(f"Error generating description: {e}")
+        await loading_msg.delete()
+        await callback.message.answer(f"❌ Помилка: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_product_ai_apply:"))
+async def process_admin_product_ai_apply(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Apply the AI generated description."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+
+    product_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    description = data.get("ai_generated_description")
+    
+    if not description:
+        await callback.answer("❌ Немає згенерованого опису", show_alert=True)
+        return
+        
+    # Update product
+    try:
+        query = select(Product).where(Product.id == product_id)
+        result = await session.execute(query)
+        product = result.scalar_one_or_none()
+        
+        if product:
+            product.description = description
+            await session.commit()
+            await callback.answer("✅ Опис оновлено!")
+            await callback.message.answer(f"✅ <b>Опис товару оновлено:</b>\n\n{description}", parse_mode="HTML")
+            
+            # Return to product card
+            await admin_product_view(callback, session)
+        else:
+            await callback.message.answer("❌ Товар не знайдено")
+            
+    except Exception as e:
+        logger.error(f"Error applying description: {e}")
+        await callback.answer("❌ Помилка збереження", show_alert=True)
 
 
 @router.callback_query(AdminStates.waiting_for_product_edit_value, F.data.startswith("admin_roast:"))

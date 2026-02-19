@@ -11,7 +11,7 @@ from src.database.session import init_db, async_session
 from sqlalchemy import select
 
 # Import handlers
-from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, profile, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils, unhandled
+from src.handlers import start, catalog, cart, loyalty, promotions, checkout, orders, profile, admin, admin_categories, admin_discounts, support, tasting_sets, info, bundles, debug_utils, unhandled, navigation
 from src.utils.bot_commands import setup_bot_commands
 
 # Configure logging
@@ -52,6 +52,9 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     
     # Register routers
+    # GLOBAL NAVIGATION (Must be first to catch commands/states)
+    dp.include_router(navigation.router)
+    
     dp.include_router(admin.router)
     dp.include_router(admin_categories.router)
     dp.include_router(admin_discounts.router)
