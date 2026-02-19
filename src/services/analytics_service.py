@@ -3,6 +3,7 @@ from typing import Dict, List
 from datetime import datetime, timedelta
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
 from src.database.models import Order, User, Product
 from config import LOYALTY_LEVELS
@@ -19,38 +20,33 @@ class AnalyticsService:
             Dict with key metrics
         """
         # Execute queries in parallel
-        queries = [
-            # 0: Total users
-            session.execute(select(func.count(User.id))),
-            # 1: Total orders & revenue (paid+)
-            session.execute(
-                select(func.count(Order.id), func.sum(Order.total))
-                .where(Order.status.in_(['paid', 'shipped', 'delivered']))
-            ),
-            # 2: Order status breakdown
-            session.execute(
-                select(Order.status, func.count(Order.id)).group_by(Order.status)
-            ),
-            # 3: Active products
-            session.execute(
-                select(func.count(Product.id)).where(Product.is_active == True)
-            )
-        ]
-        
-        results = await asyncio.gather(*queries)
-        
-        # Process results
-        total_users = results[0].scalar() or 0
-        
-        paid_stats = results[1].one()
+        # Execute queries sequentially (Session is not thread-safe for concurrent use)
+        # 0: Total users
+        total_users_result = await session.execute(select(func.count(User.id)))
+        total_users = total_users_result.scalar() or 0
+
+        # 1: Total orders & revenue (paid+)
+        paid_stats_result = await session.execute(
+            select(func.count(Order.id), func.sum(Order.total))
+            .where(Order.status.in_(['paid', 'shipped', 'delivered']))
+        )
+        paid_stats = paid_stats_result.one()
         paid_orders_count = paid_stats[0] or 0
         total_revenue = paid_stats[1] or 0
+
+        # 2: Order status breakdown
+        status_result = await session.execute(
+            select(Order.status, func.count(Order.id)).group_by(Order.status)
+        )
+        status_counts = {row[0]: row[1] for row in status_result.all()}
+
+        # 3: Active products
+        active_products_result = await session.execute(
+             select(func.count(Product.id)).where(Product.is_active == True)
+        )
+        active_products = active_products_result.scalar() or 0
         
-        # Status map
-        status_counts = {row[0]: row[1] for row in results[2].all()}
         total_orders = sum(status_counts.values())
-        
-        active_products = results[3].scalar() or 0
         
         # Calculate derived metrics
         avg_order_value = total_revenue / paid_orders_count if paid_orders_count > 0 else 0
@@ -172,25 +168,24 @@ class AnalyticsService:
         # Parallel queries:
         # 1. Aggregates (Count, Revenue)
         # 2. Items for KG calculation (only fetched column)
-        queries = [
-            session.execute(
-                select(func.count(Order.id), func.sum(Order.total))
-                .where(*filter_condition)
-            ),
-            session.execute(
-                select(Order.items).where(*filter_condition)
-            )
-        ]
+        # Execute queries sequentially
         
-        results = await asyncio.gather(*queries)
+        stats_result = await session.execute(
+            select(func.count(Order.id), func.sum(Order.total))
+            .where(*filter_condition)
+        )
+        
+        items_result = await session.execute(
+            select(Order.items).where(*filter_condition)
+        )
         
         # Process Aggregates
-        stats = results[0].one()
+        stats = stats_result.one()
         total_orders = stats[0] or 0
         total_revenue = stats[1] or 0
         
         # Process KG
-        items_rows = results[1].all()
+        items_rows = items_result.all()
         total_kg = 0
         
         for row in items_rows:
