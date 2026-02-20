@@ -85,7 +85,7 @@ def format_date(dt: datetime, format_type: str = "short") -> str:
     
     months_ua = [
         "січня", "лютого", "березня", "квітня", "травня", "червня",
-        "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"
+        "липня", "серця", "вересня", "жовтня", "листопада", "грудня"
     ]
     
     return f"{dt.day} {months_ua[dt.month - 1]} {dt.year}"
@@ -161,6 +161,7 @@ async def generate_product_description(
     """Generate a concise, AI-powered or template-based coffee description."""
     import random
     from src.services.ai_service import ai_service
+    from src.services.ai_service import logger as ai_logger
     
     # Safety checks
     if not name:
@@ -173,10 +174,10 @@ async def generate_product_description(
     roast_lower = (roast or "").lower()
     
     # Try AI first (Professional Mode)
-    from src.services.ai_service import logger as ai_logger
     ai_logger.info(f"Generating description for {name}...")
     
-    ai_narrative = await ai_service.generate_professional_description(
+    # AI service returns tuple (text, error)
+    ai_result, ai_error = await ai_service.generate_professional_description(
         name=name,
         origin=origin or "Секретна локація",
         roast=roast or "Універсальна",
@@ -184,12 +185,12 @@ async def generate_product_description(
         processing=processing or "Класична"
     )
     
-    if ai_narrative:
+    if ai_result and not ai_error:
         ai_logger.info(f"AI description generated for {name}")
-        base_text = ai_narrative
+        base_text = ai_result
     else:
         # --- FALLBACK TEMPLATES (in case AI fails or no API key) ---
-        ai_logger.warning(f"AI failed for {name}, using templates.")
+        ai_logger.warning(f"AI failed for {name}, using templates. Error: {ai_error}")
         
         # 1. ESPRESSO
         espresso_templates = [
@@ -221,7 +222,3 @@ async def generate_product_description(
             base_text = random.choice(universal_templates)
         
     return base_text
-
-
-
-

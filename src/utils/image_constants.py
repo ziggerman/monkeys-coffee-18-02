@@ -61,3 +61,44 @@ def get_product_image(product_id: int) -> Path | None:
 def get_category_image(category: str) -> Path | None:
     """Get category image path by category name."""
     return CATEGORY_IMAGES.get(category)
+
+
+def convert_image_to_png(input_path: Path, output_path: Path = None) -> Path:
+    """Convert HEIC/HEIF or other image formats to PNG.
+    
+    Args:
+        input_path: Path to the input image
+        output_path: Path for output PNG (if None, uses same name with .png)
+    
+    Returns:
+        Path to the converted PNG file
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        # If PIL not available, just return original path
+        return input_path
+    
+    try:
+        with Image.open(input_path) as img:
+            # Handle HEIC/HEIF files
+            if img.format in ('HEIC', 'HEIF'):
+                # Convert RGBA to RGB if necessary
+                if img.mode == 'RGBA':
+                    # Create white background for transparency
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[3])  # Use alpha as mask
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+            
+            # Determine output path
+            if output_path is None:
+                output_path = input_path.with_suffix('.png')
+            
+            # Save as PNG
+            img.save(output_path, 'PNG')
+            return output_path
+    except Exception as e:
+        print(f"Error converting image {input_path}: {e}")
+        return input_path

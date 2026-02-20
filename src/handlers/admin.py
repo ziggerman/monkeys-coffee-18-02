@@ -1238,7 +1238,7 @@ async def finalize_product_add(message: Message, state: FSMContext, session: Asy
         
         # Save photo if exists
         if data.get('photo_file_id'):
-            from src.utils.image_constants import ASSETS_DIR
+            from src.utils.image_constants import ASSETS_DIR, convert_image_to_png
             ASSETS_DIR.mkdir(parents=True, exist_ok=True)
             photo_path = ASSETS_DIR / f"product_{new_product.id}.png"
             
@@ -1777,7 +1777,7 @@ async def process_product_edit_image(message: Message, state: FSMContext, sessio
     
     photo = message.photo[-1]
     
-    from src.utils.image_constants import ASSETS_DIR
+    from src.utils.image_constants import ASSETS_DIR, convert_image_to_png
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     photo_path = ASSETS_DIR / f"product_{product_id}.png"
     
@@ -2340,7 +2340,7 @@ async def generate_product_image_ai(callback: CallbackQuery, session: AsyncSessi
     
     try:
         from src.services.ai_service import ai_service
-        from src.utils.image_constants import ASSETS_DIR
+        from src.utils.image_constants import ASSETS_DIR, convert_image_to_png
         
         # Generate image
         save_path = ASSETS_DIR / f"product_{product.id}.png"
@@ -2458,7 +2458,7 @@ async def process_product_image_enhance(message: Message, state: FSMContext, ses
     
     # Download the uploaded image first
     photo = message.photo[-1]
-    from src.utils.image_constants import ASSETS_DIR
+    from src.utils.image_constants import ASSETS_DIR, convert_image_to_png
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     temp_input_path = ASSETS_DIR / f"temp_enhance_{message.from_user.id}.png"
     
@@ -2467,6 +2467,9 @@ async def process_product_image_enhance(message: Message, state: FSMContext, ses
     file = await bot.get_file(photo.file_id)
     await bot.download_file(file.file_path, temp_input_path)
     
+    # Convert HEIC/HEIF to PNG if needed
+    temp_input_path = convert_image_to_png(temp_input_path)
+
     # Show loading message
     loading_msg = await message.answer(
         "✨ <b>AI покращує зображення...</b>\n\n"

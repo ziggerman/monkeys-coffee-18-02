@@ -99,6 +99,30 @@ async def show_category_management(callback: CallbackQuery, session: AsyncSessio
     await callback.answer()
 
 
+# --- ADD CATEGORY FROM PRODUCT FLOW ---
+
+@router.callback_query(F.data == "admin_cat_add_from_product")
+async def start_add_category_from_product(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Start category creation flow from product add - will return to product add after."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    await state.clear()
+    await state.update_data(return_to_product_add=True)
+    await state.set_state(AdminStates.waiting_for_category_name)
+    
+    await callback.message.answer(
+        "📝 <b>Створення нової категорії</b>\n\n"
+        "<b>Крок 1/4: Назва (UA)</b>\n"
+        "Введіть назву категорії українською мовою:\n"
+        "Наприклад: <i>Зернова кава</i>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
 # --- ADD CATEGORY FLOW ---
 
 @router.callback_query(F.data == "admin_cat_add")
@@ -225,6 +249,7 @@ async def process_category_slug(message: Message, state: FSMContext, session: As
 async def create_category(message: Message, state: FSMContext, session: AsyncSession):
     """Create the category in DB."""
     data = await state.get_data()
+    return_to_product_add = data.get('return_to_product_add', False)
     
     try:
         new_category = Category(
@@ -236,19 +261,39 @@ async def create_category(message: Message, state: FSMContext, session: AsyncSes
         )
         session.add(new_category)
         await session.commit()
-         
-        await message.answer(
-            f"✅ Категорія <b>{new_category.name_ua}</b> успішно створена!\n"
-            f"Slug: <code>{new_category.slug}</code>\n"
-            f"Порядок: {new_category.sort_order}",
-            reply_markup=get_admin_main_menu_keyboard(),
-            parse_mode="HTML"
-        )
+        
+        # Refresh session to get the new category ID
+        await session.refresh(new_category)
+        
+        if return_to_product_add:
+            # Return to product add flow with the new category
+            from src.keyboards.admin_kb import get_product_category_keyboard
+            
+            await state.update_data(category=new_category.slug)
+            await state.set_state(AdminStates.waiting_for_product_name)
+            
+            await message.answer(
+                f"✅ Категорія <b>{new_category.name_ua}</b> створена!\n\n"
+                f"Тепер продовжуємо додавання товару.\n\n"
+                f"📝 <b>Крок 1: Назва товару (UA)</b>\n"
+                "Введіть повну назву товару:",
+                reply_markup=get_cancel_keyboard(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                f"✅ Категорія <b>{new_category.name_ua}</b> успішно створена!\n"
+                f"Slug: <code>{new_category.slug}</code>\n"
+                f"Порядок: {new_category.sort_order}",
+                reply_markup=get_admin_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            await state.clear()
+            
     except Exception as e:
         logger.error(f"Error creating category: {e}")
         await message.answer("❌ Помилка при збереженні в базу даних.")
-        
-    await state.clear()
+        await state.clear()
 
 
 # --- EDIT FLOW ---
@@ -330,7 +375,25 @@ async def process_category_rename_final(message: Message, state: FSMContext, ses
             category.name_en = new_name
             
         await session.commit()
-        await message.answer(f"✅ Назву оновлено!", reply_markup=get_admin_main_menu_keyboard())
+        
+        # Return to category edit view
+        await message.answer(f"✅ Назву оновлено!")
+        callback_data = f"admin_cat_edit:{cat_id}"
+        
+        # Create a mock callback to reuse edit_category
+        from aiogram.types import CallbackQuery
+        # Just call edit_category logic directly
+        text = f"""
+<b>📂 Редагування категорії #{category.id}</b>
+
+🇺🇦 Назва: <b>{category.name_ua}</b>
+🇬🇧 Назва EN: {category.name_en or '---'}
+🔗 Slug: <code>{category.slug}</code>
+🔢 Порядок: {category.sort_order}
+Статус: {"✅ Активна" if category.is_active else "🚫 Прихована"}
+"""
+        keyboard = get_category_edit_keyboard(category.id, category.is_active)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     else:
         await message.answer("❌ Категорію не знайдено.")
         
