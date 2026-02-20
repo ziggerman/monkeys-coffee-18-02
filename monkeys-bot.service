@@ -1,0 +1,18 @@
+[Unit]
+Description=Monkeys Coffee Roasters Telegram Bot
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/monkeys-coffee
+Environment="PATH=/opt/monkeys-coffee/venv/bin"
+ExecStart=/opt/monkeys-coffee/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/monkeys-coffee/bot.log
+StandardError=append:/opt/monkeys-coffee/bot.log
+
+[Install]
+WantedBy=multi-user.target
