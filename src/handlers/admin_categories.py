@@ -26,42 +26,118 @@ logger = logging.getLogger(__name__)
 from src.utils.admin_utils import is_admin
 
 
+# ========== CONSTANTS ==========
+CATEGORIES_PER_PAGE = 8
+
+
 # ========== KEYBOARDS ==========
 
-def get_category_management_keyboard(categories: list) -> InlineKeyboardBuilder:
-    """Get keyboard for category management."""
+def get_category_management_keyboard(categories: list, page: int = 0, total_pages: int = 1) -> InlineKeyboardBuilder:
+    """Get keyboard for category management with pagination."""
     builder = InlineKeyboardBuilder()
     
     for cat in categories:
         status_icon = "✅" if cat.is_active else "🚫"
-        # Display: [Status] Name (Sort)
+        has_image = "🖼️" if cat.image_file_id or cat.image_path else ""
+        # Display: [Status] Name (Sort) [Products count]
         builder.row(InlineKeyboardButton(
-            text=f"{status_icon} {cat.name_ua} [#{cat.sort_order}]",
+            text=f"{status_icon} {cat.name_ua} #{cat.sort_order} {has_image}",
             callback_data=f"admin_cat_edit:{cat.id}"
         ))
+    
+    # Pagination controls
+    if total_pages > 1:
+        pagination_buttons = []
+        if page > 0:
+            pagination_buttons.append(InlineKeyboardButton(
+                text="⬅️",
+                callback_data=f"admin_cat_page:{page-1}"
+            ))
+        pagination_buttons.append(InlineKeyboardButton(
+            text=f"{page + 1}/{total_pages}",
+            callback_data="admin_cat_page_info"
+        ))
+        if page < total_pages - 1:
+            pagination_buttons.append(InlineKeyboardButton(
+                text="➡️",
+                callback_data=f"admin_cat_page:{page+1}"
+            ))
+        builder.row(*pagination_buttons)
         
+    builder.row(InlineKeyboardButton(text="🔄 Сортування", callback_data="admin_cat_sort_menu"))
     builder.row(InlineKeyboardButton(text="➕ Додати категорію", callback_data="admin_cat_add"))
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
     
     return builder.as_markup()
 
 
-def get_category_edit_keyboard(category_id: int, is_active: bool, has_image: bool = False) -> InlineKeyboardBuilder:
+def get_category_edit_keyboard(category_id: int, is_active: bool, has_image: bool = False, product_count: int = 0) -> InlineKeyboardBuilder:
     """Get keyboard for editing a category."""
     builder = InlineKeyboardBuilder()
     
     toggle_text = "Деактивувати 🚫" if is_active else "Активувати ✅"
     
+    # Move up/down buttons
+    builder.row(
+        InlineKeyboardButton(text="⬆️ Вгору", callback_data=f"admin_cat_move:{category_id}:up"),
+        InlineKeyboardButton(text="⬇️ Вниз", callback_data=f"admin_cat_move:{category_id}:down")
+    )
+    
     builder.row(InlineKeyboardButton(text="✏️ Змінити назву (UA)", callback_data=f"admin_cat_rename:{category_id}:ua"))
     builder.row(InlineKeyboardButton(text="✏️ Змінити назву (EN)", callback_data=f"admin_cat_rename:{category_id}:en"))
+    builder.row(InlineKeyboardButton(text="🔗 Змінити slug", callback_data=f"admin_cat_change_slug:{category_id}"))
     builder.row(InlineKeyboardButton(text="🔢 Змінити порядок", callback_data=f"admin_cat_reorder:{category_id}"))
     
     # Image management
     img_text = "🖼️ Змінити зображення" if has_image else "🖼️ Додати зображення"
     builder.row(InlineKeyboardButton(text=img_text, callback_data=f"admin_cat_image:{category_id}"))
     
+    # Show preview image if exists
+    if has_image:
+        builder.row(InlineKeyboardButton(text="👁️ Переглянути", callback_data=f"admin_cat_preview:{category_id}"))
+    
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f"admin_cat_toggle:{category_id}"))
-    builder.row(InlineKeyboardButton(text="🗑 Видалити", callback_data=f"admin_cat_del:{category_id}"))
+    
+    # Delete with warning
+    if product_count > 0:
+        builder.row(InlineKeyboardButton(
+            text=f"🗑 Видалити ({product_count} товарів)",
+            callback_data=f"admin_cat_del:{category_id}"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(text="🗑 Видалити", callback_data=f"admin_cat_del_confirm:{category_id}"))
+    
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_categories"))
+    
+    return builder.as_markup()
+
+
+def get_category_delete_confirm_keyboard(category_id: int) -> InlineKeyboardBuilder:
+    """Get keyboard for confirming category deletion."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="❌ ТАК, ВИДАЛИТИ",
+        callback_data=f"admin_cat_del_final:{category_id}"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="✅ Скасувати",
+        callback_data=f"admin_cat_edit:{category_id}"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_category_sort_menu_keyboard(categories: list) -> InlineKeyboardBuilder:
+    """Get keyboard for sorting categories."""
+    builder = InlineKeyboardBuilder()
+    
+    # Auto-sort options
+    builder.row(InlineKeyboardButton(text="🔢 За порядком (0-9)", callback_data="admin_cat_sort:order_asc"))
+    builder.row(InlineKeyboardButton(text="🔢 За порядком (9-0)", callback_data="admin_cat_sort:order_desc"))
+    builder.row(InlineKeyboardButton(text="А-Я За назвою (UA)", callback_data="admin_cat_sort:name_ua"))
+    builder.row(InlineKeyboardButton(text="Я-А За назвою (UA)", callback_data="admin_cat_sort:name_ua_desc"))
+    builder.row(InlineKeyboardButton(text="🔄 Перемішати", callback_data="admin_cat_sort:shuffle"))
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_categories"))
     
     return builder.as_markup()
@@ -77,8 +153,98 @@ def get_skip_keyboard() -> InlineKeyboardBuilder:
 # ========== HANDLERS ==========
 
 @router.callback_query(F.data == "admin_categories")
-async def show_category_management(callback: CallbackQuery, session: AsyncSession):
-    """Show category management menu."""
+async def show_category_management(callback: CallbackQuery, session: AsyncSession, page: int = 0):
+    """Show category management menu with pagination."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    query = select(Category).order_by(Category.sort_order.asc())
+    result = await session.execute(query)
+    all_categories = result.scalars().all()
+    
+    # Calculate pagination
+    total_categories = len(all_categories)
+    total_pages = max(1, (total_categories + CATEGORIES_PER_PAGE - 1) // CATEGORIES_PER_PAGE)
+    page = min(page, total_pages - 1)
+    start_idx = page * CATEGORIES_PER_PAGE
+    end_idx = min(start_idx + CATEGORIES_PER_PAGE, total_categories)
+    categories_page = all_categories[start_idx:end_idx]
+    
+    # Get product counts for each category
+    category_counts = {}
+    for cat in all_categories:
+        prod_query = select(func.count(Product.id)).where(Product.category == cat.slug)
+        prod_result = await session.execute(prod_query)
+        category_counts[cat.id] = prod_result.scalar() or 0
+    
+    # Build text with stats
+    active_count = sum(1 for c in all_categories if c.is_active)
+    total_products = sum(category_counts.values())
+    
+    text = (
+        f"<b>📂 Управління категоріями</b>\n\n"
+        f"<i>Всього: {total_categories} | Активних: {active_count} | Товарів: {total_products}</i>\n\n"
+        "Тут ви можете створювати, редагувати та сортувати категорії товарів.\n"
+        "Порядок сортування впливає на відображення в меню."
+    )
+    
+    # Build keyboard with product counts
+    builder = InlineKeyboardBuilder()
+    
+    for cat in categories_page:
+        status_icon = "✅" if cat.is_active else "🚫"
+        has_image = "🖼️" if cat.image_file_id or cat.image_path else ""
+        prod_count = category_counts.get(cat.id, 0)
+        builder.row(InlineKeyboardButton(
+            text=f"{status_icon} {cat.name_ua} #{cat.sort_order} {has_image} ({prod_count})",
+            callback_data=f"admin_cat_edit:{cat.id}"
+        ))
+    
+    # Pagination
+    if total_pages > 1:
+        pagination_buttons = []
+        if page > 0:
+            pagination_buttons.append(InlineKeyboardButton(
+                text="⬅️",
+                callback_data=f"admin_cat_page:{page-1}"
+            ))
+        pagination_buttons.append(InlineKeyboardButton(
+            text=f"{page + 1}/{total_pages}",
+            callback_data="admin_cat_page_info"
+        ))
+        if page < total_pages - 1:
+            pagination_buttons.append(InlineKeyboardButton(
+                text="➡️",
+                callback_data=f"admin_cat_page:{page+1}"
+            ))
+        builder.row(*pagination_buttons)
+    
+    builder.row(InlineKeyboardButton(text="🔄 Сортування", callback_data="admin_cat_sort_menu"))
+    builder.row(InlineKeyboardButton(text="➕ Додати категорію", callback_data="admin_cat_add"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    
+    keyboard = builder.as_markup()
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_cat_page:"))
+async def handle_category_page(callback: CallbackQuery, session: AsyncSession):
+    """Handle pagination of category list."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    page = int(callback.data.split(":")[1])
+    await show_category_management(callback, session, page)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cat_sort_menu")
+async def show_sort_menu(callback: CallbackQuery, session: AsyncSession):
+    """Show sorting options menu."""
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
         return
@@ -87,16 +253,59 @@ async def show_category_management(callback: CallbackQuery, session: AsyncSessio
     result = await session.execute(query)
     categories = result.scalars().all()
     
-    keyboard = get_category_management_keyboard(categories)
+    keyboard = get_category_sort_menu_keyboard(categories)
     
     text = (
-        "<b>📂 Управління категоріями</b>\n\n"
-        "Тут ви можете створювати, редагувати та сортувати категорії товарів.\n"
-        "Порядок сортування впливає на відображення в меню."
+        "<b>🔄 Сортування категорій</b>\n\n"
+        "Оберіть спосіб сортування:"
     )
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_cat_sort:"))
+async def handle_category_sort(callback: CallbackQuery, session: AsyncSession):
+    """Handle category sorting options."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    sort_type = callback.data.split(":")[1]
+    
+    if sort_type == "order_asc":
+        query = select(Category).order_by(Category.sort_order.asc())
+    elif sort_type == "order_desc":
+        query = select(Category).order_by(Category.sort_order.desc())
+    elif sort_type == "name_ua":
+        query = select(Category).order_by(Category.name_ua.asc())
+    elif sort_type == "name_ua_desc":
+        query = select(Category).order_by(Category.name_ua.desc())
+    elif sort_type == "shuffle":
+        import random
+        query = select(Category)
+        result = await session.execute(query)
+        categories = list(result.scalars().all())
+        random.shuffle(categories)
+        for i, cat in enumerate(categories):
+            cat.sort_order = (i + 1) * 10
+        await session.commit()
+        await callback.answer("🔄 Категорії перемішано!")
+        await show_category_management(callback, session)
+        return
+    else:
+        query = select(Category).order_by(Category.sort_order.asc())
+    
+    result = await session.execute(query)
+    categories = result.scalars().all()
+    
+    # Apply new sort order
+    for i, cat in enumerate(categories):
+        cat.sort_order = (i + 1) * 10
+    
+    await session.commit()
+    await callback.answer("✅ Сортування застосовано!")
+    await show_category_management(callback, session)
 
 
 # --- ADD CATEGORY FROM PRODUCT FLOW ---
@@ -216,7 +425,11 @@ async def process_slug_step(message: Message, state: FSMContext):
 
 @router.message(AdminStates.waiting_for_category_slug)
 async def process_category_slug(message: Message, state: FSMContext, session: AsyncSession):
-    """Process slug."""
+    """Process slug - for both creation and editing."""
+    data = await state.get_data()
+    is_edit = data.get('action') == 'change_slug'
+    cat_id = data.get('cat_id')
+    
     slug = message.text.strip().lower()
     
     # Validate format
@@ -224,26 +437,59 @@ async def process_category_slug(message: Message, state: FSMContext, session: As
     if not re.match(r'^[a-z0-9_]+$', slug):
         await message.answer("❌ Некоректний формат! Тільки латинські літери, цифри та `_`.")
         return
-
-    # Check uniqueness
+    
+    # Check uniqueness (excluding current category if editing)
     query = select(Category).where(Category.slug == slug)
+    if is_edit and cat_id:
+        query = query.where(Category.id != cat_id)
     result = await session.execute(query)
     if result.scalar_one_or_none():
         await message.answer("❌ Такий slug вже існує! Придумайте інший.")
         return
+    
+    if is_edit:
+        # Update existing category
+        query = select(Category).where(Category.id == cat_id)
+        result = await session.execute(query)
+        category = result.scalar_one_or_none()
         
-    await state.update_data(slug=slug)
-    
-    # Find next sort order
-    query_max = select(func.max(Category.sort_order))
-    result_max = await session.execute(query_max)
-    max_order = result_max.scalar() or 0
-    next_order = max_order + 10
-    
-    await state.update_data(sort_order=next_order)
-    
-    # Finalize creation (Step 4 is implied/auto)
-    await create_category(message, state, session)
+        if category:
+            old_slug = category.slug
+            category.slug = slug
+            
+            # Update all products that use this category
+            from sqlalchemy import update
+            await session.execute(
+                update(Product).where(Product.category == old_slug).values(category=slug)
+            )
+            
+            await session.commit()
+            
+            await message.answer(
+                f"✅ <b>Slug оновлено!</b>\n\n"
+                f"Старий: <code>{old_slug}</code>\n"
+                f"Новий: <code>{slug}</code>",
+                reply_markup=get_admin_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ Категорію не знайдено.")
+        
+        await state.clear()
+    else:
+        # Creating new category
+        await state.update_data(slug=slug)
+        
+        # Find next sort order
+        query_max = select(func.max(Category.sort_order))
+        result_max = await session.execute(query_max)
+        max_order = result_max.scalar() or 0
+        next_order = max_order + 10
+        
+        await state.update_data(sort_order=next_order)
+        
+        # Finalize creation
+        await create_category(message, state, session)
 
 
 async def create_category(message: Message, state: FSMContext, session: AsyncSession):
@@ -318,7 +564,15 @@ async def edit_category(callback: CallbackQuery, session: AsyncSession):
     if not category:
         await callback.answer("❌ Категорія не знайдена", show_alert=True)
         return
-        
+    
+    # Get product count
+    prod_query = select(func.count(Product.id)).where(Product.category == category.slug)
+    prod_result = await session.execute(prod_query)
+    product_count = prod_result.scalar() or 0
+    
+    # Check if has image
+    has_image = bool(category.image_file_id or category.image_path)
+    
     text = f"""
 <b>📂 Редагування категорії #{category.id}</b>
 
@@ -326,14 +580,204 @@ async def edit_category(callback: CallbackQuery, session: AsyncSession):
 🇬🇧 Назва EN: {category.name_en or '---'}
 🔗 Slug: <code>{category.slug}</code>
 🔢 Порядок: {category.sort_order}
+📦 Товарів: {product_count}
 Статус: {"✅ Активна" if category.is_active else "🚫 Прихована"}
 """
-    keyboard = get_category_edit_keyboard(category.id, category.is_active)
+    keyboard = get_category_edit_keyboard(category.id, category.is_active, has_image, product_count)
     
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
         await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+# --- MOVE CATEGORY UP/DOWN ---
+
+@router.callback_query(F.data.startswith("admin_cat_move:"))
+async def move_category(callback: CallbackQuery, session: AsyncSession):
+    """Move category up or down in the list."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    parts = callback.data.split(":")
+    cat_id = int(parts[1])
+    direction = parts[2]  # 'up' or 'down'
+    
+    # Get all categories ordered by sort_order
+    query = select(Category).order_by(Category.sort_order.asc())
+    result = await session.execute(query)
+    categories = list(result.scalars().all())
+    
+    # Find current category
+    current_idx = None
+    for i, cat in enumerate(categories):
+        if cat.id == cat_id:
+            current_idx = i
+            break
+    
+    if current_idx is None:
+        await callback.answer("❌ Категорію не знайдено", show_alert=True)
+        return
+    
+    # Calculate swap target
+    if direction == "up" and current_idx > 0:
+        target_idx = current_idx - 1
+    elif direction == "down" and current_idx < len(categories) - 1:
+        target_idx = current_idx + 1
+    else:
+        await callback.answer("🚫 Неможливо перемістити", show_alert=True)
+        return
+    
+    # Swap sort orders
+    current_cat = categories[current_idx]
+    target_cat = categories[target_idx]
+    
+    current_order = current_cat.sort_order
+    target_order = target_cat.sort_order
+    
+    current_cat.sort_order = target_order
+    target_cat.sort_order = current_order
+    
+    await session.commit()
+    
+    direction_text = "⬆️ Вгору" if direction == "up" else "⬇️ Вниз"
+    await callback.answer(f"✅ Переміщено {direction_text}")
+    
+    # Refresh view
+    await edit_category(callback, session)
+
+
+# --- CHANGE SLUG ---
+
+@router.callback_query(F.data.startswith("admin_cat_change_slug:"))
+async def start_change_slug(callback: CallbackQuery, state: FSMContext):
+    """Start slug change flow."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    cat_id = int(callback.data.split(":")[1])
+    await state.update_data(cat_id=cat_id, action="change_slug")
+    await state.set_state(AdminStates.waiting_for_category_slug)
+    
+    await callback.message.answer(
+        "🔗 <b>Зміна slug</b>\n\n"
+        "Введіть новий slug (тільки латинські літери, цифри та `_`):",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_cat_del_confirm:"))
+async def confirm_delete_category(callback: CallbackQuery, session: AsyncSession):
+    """Show delete confirmation dialog."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    cat_id = int(callback.data.split(":")[1])
+    
+    query = select(Category).where(Category.id == cat_id)
+    result = await session.execute(query)
+    category = result.scalar_one_or_none()
+    
+    if not category:
+        await callback.answer("❌ Категорію не знайдено", show_alert=True)
+        return
+    
+    text = (
+        f"<b>⚠️ Підтвердження видалення</b>\n\n"
+        f"Ви впевнені, що хочете видалити категорію <b>{category.name_ua}</b>?\n\n"
+        f"Ця дія <b>незворотня</b>!"
+    )
+    
+    keyboard = get_category_delete_confirm_keyboard(category.id)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_cat_del_final:"))
+async def final_delete_category(callback: CallbackQuery, session: AsyncSession):
+    """Actually delete the category."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    cat_id = int(callback.data.split(":")[1])
+    
+    query = select(Category).where(Category.id == cat_id)
+    result = await session.execute(query)
+    category = result.scalar_one_or_none()
+    
+    if not category:
+        await callback.answer("❌ Категорію не знайдено", show_alert=True)
+        return
+    
+    cat_name = category.name_ua
+    
+    # Delete the category
+    await session.delete(category)
+    await session.commit()
+    
+    await callback.answer("🗑 Категорію видалено!")
+    
+    # Show updated list
+    await show_category_management(callback, session)
+
+
+# --- PREVIEW CATEGORY IMAGE ---
+
+@router.callback_query(F.data.startswith("admin_cat_preview:"))
+async def preview_category_image(callback: CallbackQuery, session: AsyncSession):
+    """Preview category image."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    cat_id = int(callback.data.split(":")[1])
+    
+    query = select(Category).where(Category.id == cat_id)
+    result = await session.execute(query)
+    category = result.scalar_one_or_none()
+    
+    if not category:
+        await callback.answer("❌ Категорію не знайдено", show_alert=True)
+        return
+    
+    # Try to show image
+    if category.image_file_id:
+        # Send from Telegram file_id
+        try:
+            await callback.message.answer_photo(
+                photo=category.image_file_id,
+                caption=f"🖼️ <b>{category.name_ua}</b>",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Error sending photo by file_id: {e}")
+            await callback.answer("❌ Не вдалося завантажити зображення", show_alert=True)
+    elif category.image_path:
+        # Send local file
+        try:
+            path = Path(category.image_path)
+            if path.exists():
+                await callback.message.answer_photo(
+                    FSInputFile(path),
+                    caption=f"🖼️ <b>{category.name_ua}</b>",
+                    parse_mode="HTML"
+                )
+            else:
+                await callback.answer("❌ Файл не знайдено", show_alert=True)
+        except Exception as e:
+            logger.error(f"Error sending local image: {e}")
+            await callback.answer("❌ Не вдалося завантажити зображення", show_alert=True)
+    else:
+        await callback.answer("❌ Зображення відсутнє", show_alert=True)
+    
     await callback.answer()
 
 
@@ -461,20 +905,14 @@ async def process_reorder(message: Message, state: FSMContext, session: AsyncSes
 
 @router.callback_query(F.data.startswith("admin_cat_del:"))
 async def delete_category_check(callback: CallbackQuery, session: AsyncSession):
-    """Check before deleting."""
+    """Check before deleting - redirect to confirmation if has products."""
     cat_id = int(callback.data.split(":")[1])
-    
-    # Check for products
-    query_prod = select(func.count(Product.id)).where(Product.category == (
-        select(Category.slug).where(Category.id == cat_id).scalar_subquery()
-    ))
-    # Note: Product.category stores the SLUG, not ID. We need to get slug first.
     
     cat_query = select(Category).where(Category.id == cat_id)
     cat = (await session.execute(cat_query)).scalar_one_or_none()
     
     if not cat:
-        await callback.answer("Категорія не знайдена", show_alert=True)
+        await callback.answer("Kategorie ne znaydena", show_alert=True)
         return
 
     # Count products with this category slug
@@ -482,14 +920,13 @@ async def delete_category_check(callback: CallbackQuery, session: AsyncSession):
     prod_count = (await session.execute(prod_query)).scalar() or 0
     
     if prod_count > 0:
-        await callback.answer(f"❌ Не можна видалити! У категорії є {prod_count} товарів.", show_alert=True)
+        # Show error - can't delete
+        await callback.answer(f"❌ Ne mozhna vydalyty! U kategoriyi ye {prod_count} tovariv.", show_alert=True)
         return
-        
-    # If safe, delete
-    await session.delete(cat)
-    await session.commit()
-    await callback.answer("🗑 Категорія видалена")
-    await show_category_management(callback, session)
+    
+    # If no products, go to confirmation
+    callback.data = f"admin_cat_del_confirm:{cat_id}"
+    await confirm_delete_category(callback, session)
 
 
 # --- IMAGE MANAGEMENT ---
