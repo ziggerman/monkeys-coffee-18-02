@@ -10,7 +10,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     
     builder.row(
-        KeyboardButton(text="🏪 Каталог"),
+        KeyboardButton(text="☕ Каталог"),
         KeyboardButton(text="🛒 Мій Кошик")
     )
     builder.row(

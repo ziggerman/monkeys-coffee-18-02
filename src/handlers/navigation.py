@@ -55,7 +55,7 @@ async def global_main_menu(message: Message, session: AsyncSession, state: FSMCo
     await show_main_menu(message, session, state)
 
 
-@router.message(StateFilter("*"), F.text.in_({"☕ Каталог", "☕ Каталог кави"}))
+@router.message(StateFilter("*"), F.text.in_({"☕ Каталог", "☕ Каталог кави", "🏪 Каталог"}))
 async def global_catalog(message: Message, session: AsyncSession, state: FSMContext):
     await state.clear()
     await show_catalog_start(message, session, state)

@@ -435,7 +435,7 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
 async def handle_search_query(message: Message, session: AsyncSession):
     """Global product search by text."""
     # Ignore specific menu commands that might have slipped through
-    if message.text in ["☕ Каталог", "🛒 Мій Кошик", "👤 Мій Кабінет", "🆘 Допомога та SOS", "🏠 Головне меню"]:
+    if message.text in ["☕ Каталог", "☕ Каталог кави", "🏪 Каталог", "🛒 Мій Кошик", "👤 Мій Кабінет", "🆘 Допомога та SOS", "🏠 Головне меню"]:
         return
 
     query_text = message.text.strip()
