@@ -58,8 +58,73 @@ def get_product_image(product_id: int) -> Path | None:
     return None
 
 
-def get_category_image(category: str) -> Path | None:
-    """Get category image path by category name."""
+def get_category_image(category: str, session=None) -> Path | None:
+    """Get category image path by category name.
+    
+    Args:
+        category: Category slug
+        session: Optional DB session to check Category.image_path
+    
+    Returns:
+        Path to the category image or None
+    """
+    # First check if we have a DB session and category has custom image
+    if session:
+        from src.database.models import Category
+        from sqlalchemy import select
+        import asyncio
+        
+        async def get_db_image():
+            query = select(Category).where(Category.slug == category)
+            result = await session.execute(query)
+            cat = result.scalar_one_or_none()
+            if cat and cat.image_path:
+                path = Path(cat.image_path)
+                if path.exists():
+                    return path
+            return None
+        
+        # Try to get from DB
+        try:
+            # Check if we can use the session synchronously or need async
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in async context, this won't work directly
+                # Fall through to static
+                pass
+            else:
+                return asyncio.run(get_db_image())
+        except:
+            pass
+    
+    # Fallback to static map
+    return CATEGORY_IMAGES.get(category)
+
+
+async def get_category_image_async(category: str, session) -> Path | None:
+    """Get category image path by category name (async version).
+    
+    Args:
+        category: Category slug
+        session: AsyncSession for DB access
+    
+    Returns:
+        Path to the category image or None
+    """
+    from src.database.models import Category
+    from sqlalchemy import select
+    
+    # Check DB first for custom category image
+    query = select(Category).where(Category.slug == category)
+    result = await session.execute(query)
+    cat = result.scalar_one_or_none()
+    
+    if cat and cat.image_path:
+        path = Path(cat.image_path)
+        if path.exists():
+            return path
+    
+    # Fallback to static map
     return CATEGORY_IMAGES.get(category)
 
 

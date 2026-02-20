@@ -18,7 +18,7 @@ from src.keyboards.catalog_kb import (
 from src.services.cart_service import CartService
 from src.utils.formatters import format_tasting_notes, format_date, format_currency
 from src.utils.constants import CallbackPrefix
-from src.utils.image_constants import get_category_image, get_product_image, CATEGORY_UNIVERSAL, MODULE_CATALOG_MAP
+from src.utils.image_constants import get_category_image, get_category_image_async, get_product_image, CATEGORY_UNIVERSAL, MODULE_CATALOG_MAP
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -201,8 +201,10 @@ async def show_product_page(
     from src.keyboards.catalog_kb import get_product_list_keyboard
     keyboard = get_product_list_keyboard(page_products, page, total_pages, selected_profile)
     
-    # Get category image
-    image_path = get_category_image(selected_profile)
+    # Get category image (from DB first, then static fallback)
+    image_path = await get_category_image_async(selected_profile, session)
+    if not image_path:
+        image_path = get_category_image(selected_profile)
     logger.info(f"Selected profile: {selected_profile}, Image path: {image_path}, Exists: {image_path.exists() if image_path else 'None'}")
     
     if is_edit:
