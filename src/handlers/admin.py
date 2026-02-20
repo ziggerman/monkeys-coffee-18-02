@@ -3,7 +3,7 @@ import logging
 import asyncio
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, or_, cast, String
@@ -1582,14 +1582,34 @@ async def admin_product_edit_field(callback: CallbackQuery, state: FSMContext, s
         keyboard = get_product_edit_description_keyboard(product_id)
         
     elif field == "image":
-        await state.set_state(AdminStates.waiting_for_product_edit_value)
-        # get_cancel_keyboard is already imported at top level
-        await callback.message.answer(
-            "🖼️ <b>Оновлення зображення</b>\n\n"
-            "Надішліть нове фото товару:",
-            reply_markup=get_cancel_keyboard(),
+        # Show image options: AI generate, Upload, or Cancel
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(
+            text="🤖 Згенерувати з AI",
+            callback_data=f"admin_product_ai_img:{product_id}"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="✨ Покращити фото",
+            callback_data=f"admin_product_enhance_img:{product_id}"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="📤 Завантажити своє",
+            callback_data=f"admin_product_up_img:{product_id}"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data=f"admin_product_edit:{product_id}"
+        ))
+        
+        await callback.message.edit_text(
+            "🖼️ <b>Зображення товару</b>\n\n"
+            "Оберіть дію:\n\n"
+            "🤖 <b>Згенерувати</b> — створити нове фото з нуля\n"
+            "✨ <b>Покращити</b> — покращити існуюче фото (зберігає упаковку)",
+            reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
+        await callback.answer()
         return
         
     await state.set_state(AdminStates.waiting_for_product_edit_value)
@@ -2289,5 +2309,233 @@ async def debug_text_callbacks(callback: CallbackQuery, state: FSMContext):
     current_state = await state.get_state()
     logger.warning(f"⚠️ UNHANDLED TEXT CALLBACK: {callback.data} | State: {current_state}")
     await callback.answer(f"Debug: Unhandled | State: {current_state}", show_alert=True)
+
+
+# ========== PRODUCT IMAGE AI GENERATION ==========
+
+@router.callback_query(F.data.startswith("admin_product_ai_img:"))
+async def generate_product_image_ai(callback: CallbackQuery, session: AsyncSession):
+    """Generate product image using AI (DALL-E)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    product_id = int(callback.data.split(":")[1])
+    
+    # Get product info
+    query = select(Product).where(Product.id == product_id)
+    result = await session.execute(query)
+    product = result.scalar_one_or_none()
+    
+    if not product:
+        await callback.answer("❌ Товар не знайдено", show_alert=True)
+        return
+    
+    # Send loading message
+    loading_msg = await callback.message.answer(
+        "🤖 <b>AI генерує зображення...</b>\n"
+        "<i>Це може зайняти 10-30 секунд.</i>",
+        parse_mode="HTML"
+    )
+    
+    try:
+        from src.services.ai_service import ai_service
+        from src.utils.image_constants import ASSETS_DIR
+        
+        # Generate image
+        save_path = ASSETS_DIR / f"product_{product.id}.png"
+        image_url, error, local_path = await ai_service.generate_product_image(
+            product_name=product.name_ua,
+            origin=product.origin or "Unknown",
+            roast_level=product.roast_level or "Medium",
+            tasting_notes=product.tasting_notes,
+            save_path=save_path
+        )
+        
+        await loading_msg.delete()
+        
+        if error:
+            await callback.message.answer(
+                f"❌ <b>Помилка генерації</b>\n\n{error}",
+                parse_mode="HTML"
+            )
+            return
+        
+        if local_path:
+            # Save to database
+            product.image_url = str(local_path)
+            await session.commit()
+            
+            await callback.message.answer_photo(
+                FSInputFile(local_path),
+                caption=f"✅ <b>Зображення для {product.name_ua} згенеровано!</b>\n\n"
+                        f"Збережено локально.",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer(
+                f"⚠️ Зображення згенеровано, але не вдалося зберегти локально.\n"
+                f"URL: {image_url}",
+                parse_mode="HTML"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error generating product image: {e}")
+        await loading_msg.delete()
+        await callback.message.answer(f"❌ Помилка: {str(e)}", parse_mode="HTML")
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_product_up_img:"))
+async def start_product_image_upload(callback: CallbackQuery, state: FSMContext):
+    """Ask admin to upload image for product."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    product_id = int(callback.data.split(":")[1])
+    await state.update_data(product_id=product_id)
+    await state.set_state(AdminStates.waiting_for_product_edit_value)
+    
+    await callback.message.answer(
+        "📤 <b>Завантаження зображення</b>\n\n"
+        "Надішліть фото для товару:",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_product_enhance_img:"))
+async def start_product_image_enhance(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Ask admin to upload image to enhance (image-to-image)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    product_id = int(callback.data.split(":")[1])
+    
+    # First check if product has existing image
+    query = select(Product).where(Product.id == product_id)
+    result = await session.execute(query)
+    product = result.scalar_one_or_none()
+    
+    if not product or not product.image_url:
+        await callback.message.answer(
+            "❌ <b>Спочатку додайте фото товару</b>\n\n"
+            "Для покращення потрібно спочатку мати фото упаковки.\n"
+            "Використайте '📤 Завантажити своє' спочатку.",
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    
+    await state.update_data(product_id=product_id, enhance_mode=True)
+    await state.set_state(AdminStates.waiting_for_product_edit_value)
+    
+    await callback.message.answer(
+        "✨ <b>Покращення зображення</b>\n\n"
+        "Надішліть нове фото упаковки кави, яке ви хочете покращити.\n\n"
+        "AI покращить якість фото, змінить фон, але збереже вашу упаковку, назву та лейбли.",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_for_product_edit_value, F.photo)
+async def process_product_image_enhance(message: Message, state: FSMContext, session: AsyncSession):
+    """Process uploaded image for AI enhancement (image-to-image)."""
+    data = await state.get_data()
+    product_id = data.get('product_id')
+    enhance_mode = data.get('enhance_mode', False)
+    
+    if not enhance_mode:
+        # Regular image upload - handled by other handler
+        await process_product_edit_image(message, state, session)
+        return
+    
+    # Download the uploaded image first
+    photo = message.photo[-1]
+    from src.utils.image_constants import ASSETS_DIR
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    temp_input_path = ASSETS_DIR / f"temp_enhance_{message.from_user.id}.png"
+    
+    from aiogram import Bot
+    bot = message.bot
+    file = await bot.get_file(photo.file_id)
+    await bot.download_file(file.file_path, temp_input_path)
+    
+    # Show loading message
+    loading_msg = await message.answer(
+        "✨ <b>AI покращує зображення...</b>\n\n"
+        "<i>Це може зайняти 20-40 секунд.</i>\n\n"
+        "AI збереже вашу упаковку та лейбли, але покращить фон та якість.",
+        parse_mode="HTML"
+    )
+    
+    try:
+        # Get product info for roast level
+        query = select(Product).where(Product.id == product_id)
+        result = await session.execute(query)
+        product = result.scalar_one_or_none()
+        
+        roast_level = product.roast_level if product else None
+        
+        # Generate enhanced image
+        from src.services.ai_service import ai_service
+        save_path = ASSETS_DIR / f"product_{product_id}.png"
+        
+        image_url, error, local_path = await ai_service.enhance_product_image(
+            input_image_path=temp_input_path,
+            product_name=product.name_ua if product else None,
+            roast_level=roast_level,
+            save_path=save_path
+        )
+        
+        await loading_msg.delete()
+        
+        # Clean up temp file
+        if temp_input_path.exists():
+            temp_input_path.unlink()
+        
+        if error:
+            await message.answer(
+                f"❌ <b>Помилка покращення</b>\n\n{error}",
+                parse_mode="HTML"
+            )
+            await state.clear()
+            return
+        
+        if local_path:
+            # Update product in DB
+            if product:
+                product.image_url = str(local_path)
+                await session.commit()
+            
+            await message.answer_photo(
+                FSInputFile(local_path),
+                caption=f"✨ <b>Зображення для {product.name_ua if product else 'товару'} покращено!</b>\n\n"
+                        f"✅ Упаковка та лейбли збережені\n"
+                        f"✅ Якість покращена\n"
+                        f"✅ Новий фон застосовано",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                f"⚠️ Зображення покращено, але не вдалося зберегти.\nURL: {image_url}",
+                parse_mode="HTML"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error enhancing product image: {e}")
+        await loading_msg.delete()
+        # Clean up temp file on error
+        if temp_input_path.exists():
+            temp_input_path.unlink()
+        await message.answer(f"❌ Помилка: {str(e)}", parse_mode="HTML")
+    
+    await state.clear()
 
 

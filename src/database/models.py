@@ -355,6 +355,10 @@ class Category(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     
+    # Image support
+    image_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Telegram file_id
+    image_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Local path
+    
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def __repr__(self):

@@ -8,8 +8,38 @@ sys.path.append(os.getcwd())
 
 from sqlalchemy import select, delete
 from src.database.session import init_db, async_session
-from src.database.models import Product, TastingSet, PromoCode
+from src.database.models import Product, TastingSet, PromoCode, Category
 from src.utils.constants import CoffeeProfile
+
+
+async def seed_categories(session):
+    """Seed default product categories."""
+    print("📂 Seeding Categories...")
+    
+    # Clear existing categories
+    await session.execute(delete(Category))
+    
+    categories = [
+        Category(
+            slug="coffee",
+            name_ua="☕ Кава",
+            name_en="Coffee",
+            is_active=True,
+            sort_order=1
+        ),
+        Category(
+            slug="equipment",
+            name_ua="🏪 Магазин",
+            name_en="Shop",
+            is_active=True,
+            sort_order=2
+        ),
+    ]
+    
+    session.add_all(categories)
+    await session.commit()
+    print(f"✅ Added {len(categories)} categories")
+
 
 async def seed_products(session):
     print("🌱 Seeding Products...")
@@ -646,6 +676,8 @@ async def main():
     await init_db()
     
     async with async_session() as session:
+        # Seed categories FIRST - needed for products
+        await seed_categories(session)
         await seed_products(session)
         await seed_tasting_sets(session)
         await seed_promo_codes(session)

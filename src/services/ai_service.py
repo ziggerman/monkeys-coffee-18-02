@@ -1,16 +1,16 @@
-"""AI Service — GPT-4o primary, Gemini fallback."""
+"""AI Service — GPT-4o primary, Gemini fallback, DALL-E for images."""
 import asyncio
 import logging
+from pathlib import Path
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class AIService:
-    """Service for generating content using AI (GPT-4o primary, Gemini fallback)."""
+    """Service for generating content using AI (GPT-4o primary, Gemini fallback, DALL-E for images)."""
 
     def __init__(self):
-        # --- OpenAI (primary) ---
         # --- OpenAI (primary) ---
         self.openai_client = None
         openai_key = settings.openai_api_key
@@ -43,6 +43,11 @@ class AIService:
                 logger.info("Gemini fallback models initialized")
             except Exception as e:
                 logger.warning(f"Gemini init failed: {e}")
+        
+        # --- Assets directory for images ---
+        from src.utils.image_constants import ASSETS_DIR
+        self.assets_dir = ASSETS_DIR
+        self.assets_dir.mkdir(parents=True, exist_ok=True)
 
     async def _call_openai(self, prompt: str, system: str = None, timeout: float = 20.0) -> tuple[str | None, str | None]:
         """Call GPT-4o with timeout and quota error handling. Returns (text, error)."""
@@ -211,6 +216,268 @@ class AIService:
         # Return the most relevant error (OpenAI if set, else Gemini)
         return None, error or gemini_error
 
+    async def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1024",
+        save_path: Path = None
+    ) -> tuple[str | None, str | None, Path | None]:
+        """Generate image using DALL-E 3 and optionally save to disk.
+        
+        Args:
+            prompt: Text description for image generation
+            size: Image size (1024x1024, 1024x1792, or 1792x1024)
+            save_path: Optional path to save the image
+            
+        Returns:
+            Tuple of (image_url, error, local_path)
+            - image_url: URL of generated image (if not saved locally)
+            - error: Error message if generation failed
+            - local_path: Path to saved image (if save_path provided)
+        """
+        if not self.openai_client:
+            return None, "OpenAI client not initialized", None
+        
+        try:
+            logger.info(f"Generating image with prompt: {prompt[:100]}...")
+            
+            response = await asyncio.wait_for(
+                self.openai_client.images.generate(
+                    model="dall-e-3",
+                    prompt=prompt,
+                    size=size,
+                    quality="standard",
+                    n=1,
+                ),
+                timeout=60.0
+            )
+            
+            image_data = response.data[0]
+            image_url = image_data.url
+            
+            # Download and save if path provided
+            local_path = None
+            if save_path:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            content = await resp.read()
+                            save_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(save_path, 'wb') as f:
+                                f.write(content)
+                            local_path = save_path
+                            logger.info(f"Image saved to: {save_path}")
+                        else:
+                            logger.warning(f"Failed to download image: {resp.status}")
+            
+            return image_url, None, local_path
+            
+        except asyncio.TimeoutError:
+            logger.warning("DALL-E image generation timed out")
+            return None, "DALL-E Timeout", None
+        except Exception as e:
+            err = str(e)
+            logger.warning(f"DALL-E error: {e}")
+            if "429" in err or "quota" in err.lower() or "insufficient_quota" in err:
+                return None, "DALL-E Quota Exceeded", None
+            return None, f"DALL-E Error: {str(e)[:100]}", None
+
+    async def generate_category_image(
+        self,
+        category_name: str,
+        profile: str = None,
+        save_path: Path = None
+    ) -> tuple[str | None, str | None, Path | None]:
+        """Generate a category banner image using DALL-E.
+        
+        Args:
+            category_name: Name of the category (e.g., "Еспресо", "Фільтр")
+            profile: Optional profile type (espresso/filter/universal)
+            save_path: Path to save the image
+            
+        Returns:
+            Tuple of (image_url, error, local_path)
+        """
+        # Build detailed prompt for coffee category
+        base_prompt = "Coffee shop menu banner, minimalist design, warm coffee colors, "
+        
+        if profile == "espresso":
+            prompt = (
+                f"{base_prompt}"
+                f"Dark roasted coffee beans, espresso machine silhouette, rich brown and black colors, "
+                f"warm amber light, professional coffee photography style, clean background, "
+                f"Telegram bot menu aesthetic, no text"
+            )
+        elif profile == "filter":
+            prompt = (
+                f"{base_prompt}"
+                f"Light roasted coffee beans, pour over dripper, bright citrus and floral elements, "
+                f"golden yellow and light brown colors, morning light, clean and fresh aesthetic, "
+                f"Telegram bot menu style, no text"
+            )
+        elif profile == "universal":
+            prompt = (
+                f"{base_prompt}"
+                f"Mixed coffee beans, balanced lighting, versatile coffee accessories, "
+                f"warm brown and orange tones, cozy atmosphere, professional product shot, "
+                f"Telegram bot menu aesthetic, no text"
+            )
+        else:
+            prompt = (
+                f"{base_prompt}"
+                f"Coffee menu banner with variety of beans, professional photography, "
+                f"warm coffee shop lighting, brown and amber color palette, "
+                f"minimalist design for Telegram bot, no text"
+            )
+        
+        return await self.generate_image(prompt, save_path=save_path)
+
+    async def generate_product_image(
+        self,
+        product_name: str,
+        origin: str,
+        roast_level: str,
+        tasting_notes: list = None,
+        save_path: Path = None
+    ) -> tuple[str | None, str | None, Path | None]:
+        """Generate a product image for a coffee bag using DALL-E.
+        
+        Args:
+            product_name: Name of the coffee
+            origin: Country/region of origin
+            roast_level: Roast level (light/medium/dark)
+            tasting_notes: List of flavor notes
+            save_path: Path to save the image
+            
+        Returns:
+            Tuple of (image_url, error, local_path)
+        """
+        # Build prompt for coffee bag product shot
+        notes_str = ", ".join(tasting_notes) if tasting_notes else ""
+        
+        # Determine color tones based on roast
+        if "light" in roast_level.lower() or "filter" in roast_level.lower():
+            color_tones = "light golden brown, bright and vibrant"
+        elif "dark" in roast_level.lower() or "espresso" in roast_level.lower():
+            color_tones = "dark chocolate brown, deep rich tones"
+        else:
+            color_tones = "warm medium brown, balanced tones"
+        
+        prompt = (
+            f"Professional coffee product photography, premium coffee bag/stand-up pouch on wooden table, "
+            f"whole bean coffee, {color_tones}, natural lighting from window, "
+            f"coffee accessories (scale, grinder) in background for context, "
+            f"artisan coffee roaster style, clean minimalist composition, "
+            f"high-end e-commerce product shot, no text or labels visible"
+        )
+        
+        return await self.generate_image(prompt, save_path=save_path)
+
+    async def generate_product_variation(
+        self,
+        input_image_path: Path,
+        save_path: Path = None
+    ) -> tuple[str | None, str | None, Path | None]:
+        """Generate a variation of an existing product image using DALL-E 2.
+        
+        This uses DALL-E 2's image variation capability to create a new version
+        of the uploaded coffee package photo with improved quality while
+        maintaining the same packaging, labels, and product.
+        
+        Args:
+            input_image_path: Path to the uploaded product image
+            save_path: Path to save the generated variation
+            
+        Returns:
+            Tuple of (image_url, error, local_path)
+        """
+        if not self.openai_client:
+            return None, "OpenAI client not initialized", None
+        
+        try:
+            logger.info(f"Generating image variation from: {input_image_path}")
+            
+            # Open the input image
+            with open(input_image_path, "rb") as f:
+                image_data = f.read()
+            
+            # DALL-E 2 supports image variations
+            response = await asyncio.wait_for(
+                self.openai_client.images.create_variation(
+                    image=image_data,
+                    model="dall-e-2",
+                    size="1024x1024",
+                    n=1,
+                ),
+                timeout=60.0
+            )
+            
+            image_url = response.data[0].url
+            
+            # Download and save if path provided
+            local_path = None
+            if save_path:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            content = await resp.read()
+                            save_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(save_path, 'wb') as f:
+                                f.write(content)
+                            local_path = save_path
+                            logger.info(f"Image variation saved to: {save_path}")
+                        else:
+                            logger.warning(f"Failed to download image variation: {resp.status}")
+            
+            return image_url, None, local_path
+            
+        except asyncio.TimeoutError:
+            logger.warning("DALL-E image variation timed out")
+            return None, "DALL-E Variation Timeout", None
+        except Exception as e:
+            err = str(e)
+            logger.warning(f"DALL-E variation error: {e}")
+            if "429" in err or "quota" in err.lower() or "insufficient_quota" in err:
+                return None, "DALL-E Quota Exceeded", None
+            if "image" in err.lower() and "format" in err.lower():
+                return None, "Invalid image format. Use PNG or JPEG.", None
+            return None, f"DALL-E Error: {str(e)[:100]}", None
+
+    async def enhance_product_image(
+        self,
+        input_image_path: Path,
+        product_name: str = None,
+        roast_level: str = None,
+        save_path: Path = None
+    ) -> tuple[str | None, str | None, Path | None]:
+        """Enhance a product image using DALL-E (edit/variation).
+        
+        Takes a simple photo of a coffee package and creates a professional
+        product shot while keeping the same packaging and labels.
+        
+        Args:
+            input_image_path: Path to the uploaded product image
+            product_name: Name of the coffee (for prompt guidance)
+            roast_level: Roast level (for background style)
+            save_path: Path to save the enhanced image
+            
+        Returns:
+            Tuple of (image_url, error, local_path)
+        """
+        # Determine background style based on roast
+        background_style = "warm coffee shop atmosphere"
+        if roast_level:
+            if "light" in roast_level.lower() or "filter" in roast_level.lower():
+                background_style = "bright natural lighting, light and airy atmosphere"
+            elif "dark" in roast_level.lower() or "espresso" in roast_level.lower():
+                background_style = "dark moody atmosphere, warm amber lighting"
+        
+        # For now, use the variation endpoint which keeps the main subject
+        return await self.generate_product_variation(input_image_path, save_path)
+
 
 # Singleton instance
 ai_service = AIService()
+

@@ -10,6 +10,29 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     
     builder.row(
+        KeyboardButton(text="🏪 Каталог"),
+        KeyboardButton(text="🛒 Мій Кошик")
+    )
+    builder.row(
+        KeyboardButton(text="👤 Мій Кабінет"),
+        KeyboardButton(text="🎟️ Спецпропозиції")
+    )
+    builder.row(
+        KeyboardButton(text="☕ Рецепти"),
+        KeyboardButton(text="📖 Корисна Інфо")
+    )
+    builder.row(
+        KeyboardButton(text="🆘 Допомога та SOS")
+    )
+    
+    return builder.as_markup(resize_keyboard=True)
+
+
+def get_admin_main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Get admin main menu keyboard - same as user menu + admin panel."""
+    builder = ReplyKeyboardBuilder()
+    
+    builder.row(
         KeyboardButton(text="☕ Каталог"),
         KeyboardButton(text="🛒 Мій Кошик")
     )
@@ -18,32 +41,14 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text="🎟️ Спецпропозиції")
     )
     builder.row(
-        KeyboardButton(text="📖 Корисна Інфо"),
+        KeyboardButton(text="☕ Рецепти"),
+        KeyboardButton(text="📖 Корисна Інфо")
+    )
+    builder.row(
         KeyboardButton(text="🆘 Допомога та SOS")
     )
-    
-    return builder.as_markup(resize_keyboard=True)
-
-
-def get_admin_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Get admin main menu keyboard with additional options."""
-    builder = ReplyKeyboardBuilder()
-    
     builder.row(
-        KeyboardButton(text="☕ Каталог кави"),
-        KeyboardButton(text="🛒 Мій Кошик")
-    )
-    builder.row(
-        KeyboardButton(text="📋 Замовлення"),
-        KeyboardButton(text="💎 Бонуси")
-    )
-    builder.row(
-        KeyboardButton(text="⚡ Акції"),
-        KeyboardButton(text="💬 Підтримка")
-    )
-    builder.row(
-        KeyboardButton(text="⚙️ Адмін-панель"),
-        KeyboardButton(text="🐒 Про нас")
+        KeyboardButton(text="⚙️ Адмін-панель")
     )
     
     return builder.as_markup(resize_keyboard=True)

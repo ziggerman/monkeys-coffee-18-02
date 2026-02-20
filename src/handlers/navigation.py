@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from src.keyboards.main_menu import get_admin_main_menu_keyboard, get_main_menu_keyboard
 from src.handlers.start import cmd_start, show_main_menu, show_about, show_support
+from src.handlers.support import show_recipes_menu
 from src.handlers.catalog import show_catalog_start
 from src.handlers.cart import show_cart
 from src.handlers.profile import show_profile
@@ -75,7 +76,13 @@ async def global_profile(message: Message, session: AsyncSession, state: FSMCont
 @router.message(StateFilter("*"), F.text == "🎟️ Спецпропозиції")
 async def global_promotions(message: Message, session: AsyncSession, state: FSMContext):
     await state.clear()
-    await show_promotions(message, session, state)
+    # Get user from database
+    from sqlalchemy import select
+    from src.database.models import User
+    query = select(User).where(User.id == message.from_user.id)
+    result = await session.execute(query)
+    user = result.scalar_one_or_none()
+    await show_promotions(message, session, user)
     
 @router.message(StateFilter("*"), F.text.in_({"📖 Корисна Інфо", "🐒 Про нас"}))
 async def global_about(message: Message, session: AsyncSession, state: FSMContext):
@@ -86,3 +93,10 @@ async def global_about(message: Message, session: AsyncSession, state: FSMContex
 async def global_support(message: Message, session: AsyncSession, state: FSMContext):
     await state.clear()
     await show_support(message, session, state)
+
+
+@router.message(StateFilter("*"), F.text == "☕ Рецепти")
+async def global_recipes(message: Message, state: FSMContext):
+    """Handle Recipes menu button."""
+    await state.clear()
+    await show_recipes_menu(message)
