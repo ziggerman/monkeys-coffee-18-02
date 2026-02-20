@@ -18,6 +18,11 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
     ))
     
     builder.row(InlineKeyboardButton(
+        text="📂 Категорії",
+        callback_data="admin_categories"
+    ))
+    
+    builder.row(InlineKeyboardButton(
         text="📊 Аналітика",
         callback_data="admin_analytics"
     ))
@@ -352,8 +357,14 @@ def get_product_category_keyboard(categories: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for cat in categories:
-        builder.row(InlineKeyboardButton(text=cat.name_ua, callback_data=f"admin_cat:{cat.slug}"))
-        
+        # Show emoji for category with image
+        has_image = "🖼️ " if cat.image_file_id or cat.image_path else ""
+        builder.row(InlineKeyboardButton(
+            text=f"{has_image}{cat.name_ua}", 
+            callback_data=f"admin_cat:{cat.slug}"
+        ))
+    
+    builder.row(InlineKeyboardButton(text="➕ Створити нову категорію", callback_data="admin_cat_add_from_product"))
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
     return builder.as_markup()
 def get_content_management_keyboard() -> InlineKeyboardMarkup:
