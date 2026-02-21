@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - db_store:/app/db_store
+    working_dir: /app
+
+volumes:
+  db_store:
