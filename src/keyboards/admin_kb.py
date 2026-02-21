@@ -117,7 +117,7 @@ def get_admin_product_list_keyboard(products: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for product in products:
-        status_text = "[Активний]" if product.is_active else "[Неактивний]"
+        status_text = "✅" if product.is_active else "🚫"
         builder.row(InlineKeyboardButton(
             text=f"{status_text} {product.name_ua}",
             callback_data=f"admin_product_view:{product.id}"

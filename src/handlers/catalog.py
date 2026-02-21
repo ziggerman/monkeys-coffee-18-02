@@ -23,7 +23,8 @@ from src.utils.image_constants import get_category_image, get_category_image_asy
 router = Router()
 logger = logging.getLogger(__name__)
 
-
+# Coffee profiles (categories that require coffee-specific fields)
+COFFEE_CATEGORIES = {"espresso", "filter", "universal"}
 
 
 @router.message(Command("catalog"))
@@ -59,8 +60,8 @@ async def show_catalog_start(event: Message | CallbackQuery, session: AsyncSessi
 👇 Обирай свій профіль:
 """
     
-    # Always use hardcoded profile keyboard (Еспресо / Фільтр / Універсальна / Весь Арсенал / Магазин)
-    keyboard = get_profile_filter_keyboard()
+    # Dynamic keyboard built from DB categories (coffee profiles + shop)
+    keyboard = await get_profile_filter_keyboard(session)
     
     # Get dynamic image (Roast Map)
     from src.utils.ui_utils import get_module_image
@@ -352,7 +353,7 @@ async def show_product_details(callback: CallbackQuery, session: AsyncSession):
         await callback.answer("Товар не знайдено", show_alert=True)
         return
 
-    is_coffee = product.category == 'coffee'
+    is_coffee = product.category in COFFEE_CATEGORIES
     
     # Breadcrumbs
     # We try to reconstruct based on back_profile
@@ -467,7 +468,7 @@ async def handle_search_query(message: Message, session: AsyncSession):
         # Reuse existing detail view logic but we need to mock a callback or call logic directly
         # Easiest is to send the detail message directly
         
-        is_coffee = product.category == 'coffee'
+        is_coffee = product.category in COFFEE_CATEGORIES
         if is_coffee:
             roast_str = product.roast_level or "Невідомо"
             text = f"""

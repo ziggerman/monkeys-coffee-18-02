@@ -85,9 +85,26 @@ async def process_product_back(callback: CallbackQuery, state: FSMContext, sessi
     data = await state.get_data()
     category = data.get("category", "coffee")
 
-    if target in ["coffee", "equipment", "merch", "other", "tea", "cocoa", "accessories"]:
+    if target in ["espresso", "filter", "universal", "equipment", "merch", "other", "tea", "cocoa", "accessories"]:
         # Back from Step 1 (Name) to Category selection
         await start_product_add(callback, state, session)
+        return
+    
+    # Back to profile selection for coffee categories (espresso/filter/universal)
+    if target == "profile":
+        await state.set_state(AdminStates.waiting_for_product_profile)
+        from src.keyboards.admin_kb import get_profile_keyboard
+        data = await state.get_data()
+        await callback.message.edit_text(
+            "🥤 <b>Крок 1/9: Профіль обсмаження</b>\n\n"
+            "Оберіть профіль кави:\n\n"
+            "<b>🥤 Еспресо</b> — для рістретто, американо, капучіно\n"
+            "<b>🫖 Фільтр</b> — для крапельної кави, чаю, френч-пресу\n"
+            "<b>⚗️ Універсальна</b> — підходить для всього",
+            reply_markup=get_profile_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
         return
 
     if target == "name":
@@ -765,9 +782,12 @@ async def start_product_add(callback: CallbackQuery, state: FSMContext, session:
     await callback.answer()
 
 
+# Coffee categories that need profile selection
+COFFEE_CATEGORIES = ["espresso", "filter", "universal"]
+
 @router.callback_query(StateFilter("*"), F.data.startswith("admin_cat:"))
 async def process_product_category(callback: CallbackQuery, state: FSMContext):
-    """Process category selection and ask for name."""
+    """Process category selection and ask for profile (if coffee) or name."""
     # Ensure state is cleared if user jumps here from elsewhere (or restart)
     await state.clear()
     
@@ -775,10 +795,50 @@ async def process_product_category(callback: CallbackQuery, state: FSMContext):
     logger.info(f"Category selected: {category} for user {callback.from_user.id}")
     await state.update_data(category=category)
     
+    # For coffee categories (espresso/filter/universal), ask for profile first
+    if category in COFFEE_CATEGORIES:
+        await state.set_state(AdminStates.waiting_for_product_profile)
+        from src.keyboards.admin_kb import get_profile_keyboard
+        await callback.message.edit_text(
+            "🥤 <b>Крок 1/9: Профіль обсмаження</b>\n\n"
+            "Оберіть профіль кави:\n\n"
+            "<b>🥤 Еспресо</b> — для рістретто, американо, капучіно\n"
+            "<b>🫖 Фільтр</b> — для крапельної кави, чаю, френч-пресу\n"
+            "<b>⚗️ Універсальна</b> — підходить для всього",
+            reply_markup=get_profile_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        # For non-coffee categories (equipment, merch, etc.), go directly to name
+        await state.set_state(AdminStates.waiting_for_product_name)
+        await callback.message.edit_text(
+            "📝 <b>Крок 1/3: Назва товару (UA)</b>\n"
+            "Введіть повну назву:",
+            reply_markup=get_inline_cancel_keyboard(),
+            parse_mode="HTML"
+        )
+    await callback.answer()
+
+
+@router.callback_query(AdminStates.waiting_for_product_profile, F.data.startswith("admin_profile:"))
+async def process_product_profile_selection(callback: CallbackQuery, state: FSMContext):
+    """Process profile selection and ask for product name."""
+    profile_code = callback.data.split(":")[1]
+    
+    profile_map = {
+        "profile_espresso": "espresso",
+        "profile_filter": "filter",
+        "profile_universal": "universal"
+    }
+    profile = profile_map.get(profile_code, "universal")
+    
+    await state.update_data(profile=profile)
+    logger.info(f"Profile selected: {profile} for user {callback.from_user.id}")
+    
     await state.set_state(AdminStates.waiting_for_product_name)
     await callback.message.edit_text(
-        "📝 <b>Крок 1/8: Назва товару (UA)</b>\n"
-        "Введіть повну назву (наприклад: <i>V60 Drip Set</i> чи <i>Ethiopia Sidamo</i>):",
+        "📝 <b>Крок 2/9: Назва товару (UA)</b>\n"
+        "Введіть повну назву (наприклад: <i>Ethiopia Sidamo</i> або <i>Colombia Supremo</i>):",
         reply_markup=get_inline_cancel_keyboard(),
         parse_mode="HTML"
     )
@@ -846,17 +906,17 @@ async def process_product_name(message: Message, state: FSMContext):
         logger.info(f"Simple category detected: {category}. Moving to price.")
         await state.set_state(AdminStates.waiting_for_product_price_300g)
         await message.answer(
-            "💰 <b>Крок 2/3: Ціна (грн)</b>\n"
+            "💰 <b>Крок 3/3: Ціна (грн)</b>\n"
             "Введіть вартість за одиницю товару:",
             reply_markup=get_back_keyboard(target="name"), 
             parse_mode="HTML"
         )
     else:
-        # Proceed to coffee origin (Step 2/8)
+        # Proceed to coffee origin (Step 3/9)
         logger.info(f"Coffee category detected. Moving to origin.")
         await state.set_state(AdminStates.waiting_for_product_origin)
         await message.answer(
-            "🌍 <b>Крок 2/8: Походження / Регіон</b>\n"
+            "🌍 <b>Крок 3/9: Походження / Регіон</b>\n"
             "Наприклад: <i>Ефіопія, Їргачефф</i> або <i>Колумбія, Уїла</i>",
             reply_markup=get_back_keyboard(target="name"),
             parse_mode="HTML"
@@ -1143,7 +1203,7 @@ async def show_product_preview(message: Message, state: FSMContext):
     
     price_300g_formatted = format_currency(data.get('price_300g', 0))
     price_1kg_formatted = format_currency(data.get('price_1kg', 0))
-    is_coffee = data.get('category', 'coffee') == 'coffee'
+    is_coffee = data.get('category') in COFFEE_CATEGORIES
     
     preview_parts = [
         "<b>🧐 ПЕРЕГЛЯД ТОВАРУ:</b>",
@@ -1208,16 +1268,17 @@ async def finalize_product_add(message: Message, state: FSMContext, session: Asy
             description = message.text
         
         category = data.get('category', 'coffee')
-        profile = "equipment" if category == "equipment" else "universal"
+        # Use profile from state if available (selected by user), otherwise default
+        profile = data.get('profile', 'universal')
         
         new_product = Product(
             category=category,
             name_ua=data.get('name_ua', 'Unknown'),
             origin=data.get('origin', 'Unknown'),
-            region=data.get('origin', 'Unknown'), # Map origin to region for display in catalog
+            region=data.get('origin', 'Unknown'),
             roast_level=data.get('roast_level', 'Medium'),
             processing_method=data.get('processing_method', 'Washed'),
-            processing=data.get('processing_method', 'Washed'), # Backwards compatibility
+            processing=data.get('processing_method', 'Washed'),
             price_300g=data.get('price_300g', 0),
             price_1kg=data.get('price_1kg', 0),
             profile=profile,
@@ -1443,10 +1504,162 @@ async def show_promos_list(callback: CallbackQuery, session: AsyncSession):
             callback_data=f"admin_promo_toggle:{promo.id}"
         ))
     
+    builder.row(InlineKeyboardButton(text="➕ Створити промокод", callback_data="admin_promo_create"))
     builder.row(InlineKeyboardButton(text="← Назад", callback_data="admin_analytics"))
-    
+
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_promo_create")
+async def start_create_promo(callback: CallbackQuery, state: FSMContext):
+    """Start promo code creation flow."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    await state.clear()
+    await state.set_state(AdminStates.waiting_for_promo_code)
+    
+    await callback.message.answer(
+        "🎫 <b>Створення промокоду</b>\n\n"
+        "<b>Крок 1/6: Код промокоду</b>\n"
+        "Введіть унікальний код (латиниця, цифри, без пробілів):\n\n"
+        "Наприклад: <code>SUMMER25</code>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_for_promo_code, F.text, ~F.text.startswith("/"))
+async def process_promo_code(message: Message, state: FSMContext):
+    """Process promo code input."""
+    code = message.text.strip().upper()
+    
+    # Validate format
+    import re
+    if not re.match(r'^[A-Z0-9_]+$', code):
+        await message.answer("❌ Некоректний формат! Тільки латинські літери, цифри та `_`.")
+        return
+    
+    await state.update_data(promo_code=code)
+    await state.set_state(AdminStates.waiting_for_promo_discount)
+    
+    await message.answer(
+        "🎫 <b>Крок 2/6: Знижка (%)</b>\n"
+        "Введіть відсоток знижки (число від 1 до 100):\n\n"
+        "Наприклад: <code>15</code>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminStates.waiting_for_promo_discount, F.text, ~F.text.startswith("/"))
+async def process_promo_discount(message: Message, state: FSMContext):
+    """Process discount percentage."""
+    try:
+        discount = int(message.text.strip())
+        if discount < 1 or discount > 100:
+            await message.answer("❌ Введіть число від 1 до 100.")
+            return
+    except ValueError:
+        await message.answer("❌ Введіть числове значення.")
+        return
+    
+    await state.update_data(promo_discount=discount)
+    await state.set_state(AdminStates.waiting_for_promo_description)
+    
+    await message.answer(
+        "🎫 <b>Крок 3/6: Опис (необов'язково)</b>\n"
+        "Введіть опис промокоду або пропустіть:\n\n"
+        "Наприклад: <code>Знижка на перше замовлення</code>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminStates.waiting_for_promo_description, F.text, ~F.text.startswith("/"))
+async def process_promo_description(message: Message, state: FSMContext):
+    """Process promo description."""
+    desc = message.text.strip() if message.text.strip() else None
+    await state.update_data(promo_description=desc)
+    await state.set_state(AdminStates.waiting_for_promo_usage_limit)
+    
+    await message.answer(
+        "🎫 <b>Крок 4/6: Ліміт використання</b>\n"
+        "Введіть максимальну кількість використань або 0 для безліміту:\n\n"
+        "Наприклад: <code>100</code> або <code>0</code>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminStates.waiting_for_promo_usage_limit, F.text, ~F.text.startswith("/"))
+async def process_promo_usage_limit(message: Message, state: FSMContext):
+    """Process usage limit."""
+    try:
+        limit = int(message.text.strip())
+        if limit < 0:
+            await message.answer("❌ Введіть невід'ємне число.")
+            return
+    except ValueError:
+        await message.answer("❌ Введіть числове значення.")
+        return
+    
+    await state.update_data(promo_usage_limit=limit if limit > 0 else None)
+    await state.set_state(AdminStates.waiting_for_promo_min_amount)
+    
+    await message.answer(
+        "🎫 <b>Крок 5/6: Мінімальна сума замовлення</b>\n"
+        "Введіть мінімальну суму для застосування знижки (грн):\n\n"
+        "Наприклад: <code>500</code> (0 для без обмежень)",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminStates.waiting_for_promo_min_amount, F.text, ~F.text.startswith("/"))
+async def process_promo_min_amount(message: Message, state: FSMContext, session: AsyncSession):
+    """Process min amount and create promo."""
+    try:
+        min_amount = int(message.text.strip())
+        if min_amount < 0:
+            await message.answer("❌ Введіть невід'ємне число.")
+            return
+    except ValueError:
+        await message.answer("❌ Введіть числове значення.")
+        return
+    
+    data = await state.get_data()
+    
+    # Create promo code
+    from src.database.models import PromoCode
+    from datetime import datetime, timedelta
+    
+    promo = PromoCode(
+        code=data['promo_code'],
+        discount_percent=data['promo_discount'],
+        description=data.get('promo_description'),
+        usage_limit=data.get('promo_usage_limit'),
+        min_order_amount=min_amount,
+        is_active=True
+    )
+    
+    session.add(promo)
+    await session.commit()
+    
+    await message.answer(
+        f"✅ <b>Промокод створено!</b>\n\n"
+        f"🎫 Код: <code>{promo.code}</code>\n"
+        f"💰 Знижка: {promo.discount_percent}%\n"
+        f"📊 Ліміт: {promo.usage_limit or '∞'}\n"
+        f"💵 Мін. сума: {format_currency(promo.min_order_amount)}",
+        reply_markup=get_admin_main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    
+    await state.clear()
 
 
 @router.callback_query(F.data.startswith("admin_promo_toggle:"))

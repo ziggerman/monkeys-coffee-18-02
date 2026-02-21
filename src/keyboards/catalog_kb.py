@@ -30,7 +30,65 @@ def get_format_selection_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_profile_filter_keyboard() -> InlineKeyboardMarkup:
+async def get_profile_filter_keyboard(session) -> InlineKeyboardMarkup:
+    """Get coffee profile filter keyboard - dynamically built from DB categories."""
+    from sqlalchemy import select
+    from src.database.models import Category
+    
+    builder = InlineKeyboardBuilder()
+    
+    # Fetch active coffee categories (espresso, filter, universal) from DB
+    # These are the "coffee profile" categories
+    coffee_profiles = ["espresso", "filter", "universal"]
+    query = select(Category).where(
+        Category.is_active == True,
+        Category.slug.in_(coffee_profiles)
+    ).order_by(Category.sort_order.asc())
+    
+    result = await session.execute(query)
+    categories = result.scalars().all()
+    
+    # Build buttons for each coffee profile category
+    emoji_map = {
+        "espresso": "🥤",
+        "filter": "🫖",
+        "universal": "⚗️"
+    }
+    
+    for cat in categories:
+        emoji = emoji_map.get(cat.slug, "☕")
+        builder.row(InlineKeyboardButton(
+            text=f"{emoji} {cat.name_ua.replace('🥤 ', '').replace('🫖 ', '').replace('⚗️ ', '')}",
+            callback_data=f"{CallbackPrefix.CATALOG_PROFILE}{cat.slug}"
+        ))
+    
+    # Add "Весь Арсенал" - shows ALL coffee products from all profiles
+    builder.row(InlineKeyboardButton(
+        text="🫘 Весь Арсенал",
+        callback_data=f"{CallbackPrefix.CATALOG_PROFILE}all"
+    ))
+    
+    # Add shop/equipment category if active
+    eq_query = select(Category).where(
+        Category.is_active == True,
+        Category.slug == "equipment"
+    ).order_by(Category.sort_order.asc())
+    eq_result = await session.execute(eq_query)
+    eq_categories = eq_result.scalars().all()
+    
+    for cat in eq_categories:
+        builder.row(InlineKeyboardButton(
+            text="📦 Магазин",
+            callback_data=f"{CallbackPrefix.CATALOG_PROFILE}equipment"
+        ))
+    
+    builder.row(InlineKeyboardButton(text="🔙 Назад до меню", callback_data="start"))
+    
+    return builder.as_markup()
+
+
+# Keep sync version for backward compatibility during transition
+def get_profile_filter_keyboard_sync() -> InlineKeyboardMarkup:
     """Get coffee profile filter keyboard (static fallback)."""
     builder = InlineKeyboardBuilder()
     

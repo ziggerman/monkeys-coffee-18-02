@@ -15,6 +15,7 @@ class AdminStates(StatesGroup):
     waiting_for_product_confirm_generated = State()
     
     # New interactive flow states
+    waiting_for_product_profile = State()
     waiting_for_product_roast_level = State()
     waiting_for_product_processing = State()
     
@@ -45,3 +46,11 @@ class AdminStates(StatesGroup):
     waiting_for_category_slug = State()
     waiting_for_category_sort_order = State()
     waiting_for_category_rename = State()
+    
+    # Promo Codes
+    waiting_for_promo_code = State()
+    waiting_for_promo_discount = State()
+    waiting_for_promo_description = State()
+    waiting_for_promo_usage_limit = State()
+    waiting_for_promo_min_amount = State()
+    waiting_for_promo_valid_until = State()
