@@ -248,7 +248,7 @@ def get_product_edit_fields_keyboard(product_id: int) -> InlineKeyboardMarkup:
         ("Нотатки", "tasting_notes"),
         ("Опис", "description"),
         ("Зображення", "image"),
-        ("Категорія", "category"),
+        ("Категоря", "category"),
     ]
     
     for label, field in fields:
@@ -302,6 +302,24 @@ def get_roast_level_keyboard(category: str = "coffee") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+async def get_product_type_keyboard() -> InlineKeyboardMarkup:
+    """Get keyboard for selecting product type (Coffee or Shop)."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="☕ Кава",
+        callback_data="admin_type:coffee"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="📦 Магазин",
+        callback_data="admin_type:shop"
+    ))
+    
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
+    return builder.as_markup()
+
+
 def get_profile_keyboard() -> InlineKeyboardMarkup:
     """Get keyboard for selecting profile."""
     builder = InlineKeyboardBuilder()
@@ -315,7 +333,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
     for label, code in profiles:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"admin_profile:{code}"))
         
-    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_product_back:roast"))
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_product_back:type"))
     return builder.as_markup()
 
 
@@ -367,6 +385,8 @@ def get_product_category_keyboard(categories: list) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="➕ Створити нову категорію", callback_data="admin_cat_add_from_product"))
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main"))
     return builder.as_markup()
+
+
 def get_content_management_keyboard() -> InlineKeyboardMarkup:
     """Get content & discounts management keyboard."""
     builder = InlineKeyboardBuilder()
@@ -388,12 +408,6 @@ def get_image_management_keyboard(modules: dict) -> InlineKeyboardMarkup:
         
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_content_main"))
     return builder.as_markup()
-
-
-
-
-
-
 
 
 def get_content_editor_keyboard(items: list) -> InlineKeyboardMarkup:
@@ -469,4 +483,172 @@ def get_apply_ai_text_keyboard(product_id: int) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="✅ Застосувати", callback_data=f"admin_product_ai_apply:{product_id}"))
     builder.row(InlineKeyboardButton(text="🔄 Спробувати ще", callback_data=f"admin_product_ai_gen:{product_id}"))
     builder.row(InlineKeyboardButton(text="❌ Скасувати", callback_data=f"admin_product_edit:{product_id}"))
+    return builder.as_markup()
+
+
+# ============================================
+# ГЛИБОКА НАВІГАЦІЯ - Клавіатури з кнопкою "Назад"
+# ============================================
+
+def get_admin_keyboard_with_back(
+    text: str, 
+    reply_markup: InlineKeyboardMarkup,
+    can_go_back: bool = True
+) -> InlineKeyboardMarkup:
+    """Допоміжна функція для додавання кнопки 'Назад' до будь-якої клавіатури."""
+    if not can_go_back:
+        return reply_markup
+    
+    # Додаємо кнопку "Назад" в кінець
+    builder = InlineKeyboardBuilder()
+    
+    # Копіюємо всі кнопки
+    for row in reply_markup.inline_keyboard:
+        for button in row:
+            builder.row(button)
+    
+    # Додаємо кнопку глибокої навігації
+    builder.row(InlineKeyboardButton(
+        text="⬅️ Глибока Назад",
+        callback_data="admin_nav_back"
+    ))
+    
+    # Завжди можна повернутися в головне меню
+    builder.row(InlineKeyboardButton(
+        text="🏠 В меню",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_orders_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура замовлень з глибокою навігацією."""
+    keyboard = get_order_management_keyboard()
+    return get_admin_keyboard_with_back("Замовлення", keyboard, can_go_back)
+
+
+def get_products_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура товарів з глибокою навігацією."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="🫘 Усі товари",
+        callback_data="admin_products_list"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="➕ Додати товар",
+        callback_data="admin_product_add"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="📂 Категорії",
+        callback_data="admin_categories"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="⬅️ Глибока Назад",
+        callback_data="admin_nav_back"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🏠 В меню",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_analytics_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура аналітики з глибокою навігацією."""
+    keyboard = get_analytics_keyboard()
+    return get_admin_keyboard_with_back("Аналітика", keyboard, can_go_back)
+
+
+def get_users_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура користувачів з глибокою навігацією."""
+    keyboard = get_admin_users_keyboard()
+    return get_admin_keyboard_with_back("Користувачі", keyboard, can_go_back)
+
+
+def get_content_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура контенту з глибокою навігацією."""
+    keyboard = get_content_management_keyboard()
+    return get_admin_keyboard_with_back("Конструктор", keyboard, can_go_back)
+
+
+def get_promos_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура промокодів з глибокою навігацією."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="➕ Додати промокод",
+        callback_data="admin_promo_add"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="⬅️ Глибока Назад",
+        callback_data="admin_nav_back"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🏠 В меню",
+        callback_data="admin_main"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_product_view_keyboard_with_nav(
+    product_id: int, 
+    is_active: bool,
+    can_go_back: bool = True
+) -> InlineKeyboardMarkup:
+    """Клавіатура перегляду товару з глибокою навігацією."""
+    keyboard = get_product_action_keyboard(product_id, is_active)
+    
+    if not can_go_back:
+        return keyboard
+    
+    # Додаємо кнопку "Назад"
+    builder = InlineKeyboardBuilder()
+    for row in keyboard.inline_keyboard:
+        for button in row:
+            builder.row(button)
+    
+    builder.row(InlineKeyboardButton(
+        text="⬅️ Глибока Назад",
+        callback_data="admin_nav_back"
+    ))
+    
+    return builder.as_markup()
+
+
+def get_category_keyboard_with_nav(can_go_back: bool = True) -> InlineKeyboardMarkup:
+    """Клавіатура категорій з глибокою навігацією."""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="📂 Усі категорії",
+        callback_data="admin_categories_list"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="➕ Додати категорію",
+        callback_data="admin_category_add"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="📊 Сортування",
+        callback_data="admin_category_sort"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="⬅️ Глибока Назад",
+        callback_data="admin_nav_back"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🏠 В меню",
+        callback_data="admin_main"
+    ))
+    
     return builder.as_markup()

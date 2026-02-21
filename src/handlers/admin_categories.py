@@ -997,32 +997,11 @@ async def generate_category_image_ai(callback: CallbackQuery, session: AsyncSess
     try:
         from src.services.ai_service import ai_service
         
-        # Determine profile from slug - map Ukrainian category names to profiles
-        profile = None
-        category_slug = category.slug.lower() if category.slug else ""
-        
-        # Map slugs and names to profiles
-        if category_slug in ["espresso", "espresso_coffee"]:
-            profile = "espresso"
-        elif category_slug in ["filter", "filter_coffee", "альтернатива"]:
-            profile = "filter"
-        elif category_slug in ["universal", "coffee", "кава"]:
-            profile = "universal"
-        else:
-            # Also check the Ukrainian name
-            name_lower = category.name_ua.lower() if category.name_ua else ""
-            if "еспресо" in name_lower:
-                profile = "espresso"
-            elif "фільтр" in name_lower or "альтернатива" in name_lower:
-                profile = "filter"
-            elif "універсальн" in name_lower:
-                profile = "universal"
-        
-        # Generate image - pass both name and profile for better prompt
+        # Generate image with category name only - no automatic profile mapping
         save_path = ASSETS_DIR / f"category_{category.slug}.png"
         image_url, error, local_path = await ai_service.generate_category_image(
             category_name=category.name_ua or category.slug,
-            profile=profile,
+            profile=None,
             save_path=save_path
         )
         

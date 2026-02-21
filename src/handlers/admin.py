@@ -205,6 +205,52 @@ async def cmd_check_state(message: Message, state: FSMContext):
     await message.answer(f"🔍 <b>Поточний стан:</b> {current_state}\n📦 <b>Дані:</b> {data}")
 
 
+@router.message(Command("clearcache"))
+async def cmd_clear_cache(message: Message, session: AsyncSession):
+    """Clear Telegram cache - file_ids for images and in-memory cache."""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас немає доступу")
+        return
+    
+    from src.database.models import Category, ModuleImage
+    from sqlalchemy import select
+    
+    # Clear Category image file_ids
+    result = await session.execute(select(Category))
+    categories = result.scalars().all()
+    cat_count = 0
+    for cat in categories:
+        if cat.image_file_id:
+            cat.image_file_id = None
+            cat_count += 1
+        if cat.image_path:
+            cat.image_path = None
+    
+    # Clear ModuleImage file_ids
+    result = await session.execute(select(ModuleImage))
+    modules = result.scalars().all()
+    mod_count = 0
+    for mod in modules:
+        if mod.file_id:
+            mod.file_id = None
+            mod_count += 1
+    
+    await session.commit()
+    
+    # Clear in-memory image cache
+    from src.utils.ui_utils import clear_module_image_cache
+    await clear_module_image_cache()
+    
+    await message.answer(
+        f"🧹 <b>Кеш очищено!</b>\n\n"
+        f"• Категорії: {cat_count} зображень\n"
+        f"• Модулі: {mod_count} зображень\n"
+        f"• Кеш в пам'яті: очищено\n\n"
+        f"<i>Примітка: Стан FSM очиститься при перезапуску бота.</i>",
+        parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data == "admin_main")
 async def show_admin_main(callback: CallbackQuery, session: AsyncSession):
     """Show admin panel main menu from callback."""
@@ -756,51 +802,48 @@ async def show_product_management(callback: CallbackQuery, session: AsyncSession
 
 @router.callback_query(F.data == "admin_product_add")
 async def start_product_add(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Start product addition flow by asking for category."""
+    """Start product addition flow - first step: choose product type (Coffee or Shop)."""
     logger.info(f"Admin product add started by user {callback.from_user.id}")
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
         return
     
-    from src.database.models import Category
-    from src.keyboards.admin_kb import get_product_category_keyboard
-    
-    query = select(Category).where(Category.is_active == True).order_by(Category.sort_order.asc())
-    result = await session.execute(query)
-    categories = result.scalars().all()
-    
-    # DEBUG LOG
-    logger.info(f"Start Product Add: Found {len(categories)} active categories: {[c.slug for c in categories]}")
-    
     await state.clear()
-    await state.set_state(AdminStates.waiting_for_product_category)
+    await state.set_state(AdminStates.waiting_for_product_type)
+    
+    # New simplified keyboard: Coffee or Shop
+    from src.keyboards.admin_kb import get_product_type_keyboard
+    keyboard = await get_product_type_keyboard()
+    
     await callback.message.answer(
-        "📂 <b>Крок 0: Оберіть категорію товару</b>",
-        reply_markup=get_product_category_keyboard(categories),
+        "📦 <b>Створення нового товару</b>\n\n"
+        "Оберіть тип товару:\n\n"
+        "☕ <b>Кава</b> — кавові зерна для різних методів заварювання\n"
+        "📦 <b>Магазин</b> — аксесуари, обладнання, чай, какао",
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
     await callback.answer()
 
 
-# Coffee categories that need profile selection
-COFFEE_CATEGORIES = ["espresso", "filter", "universal"]
+# Product types
+PRODUCT_TYPE_COFFEE = "coffee"
+PRODUCT_TYPE_SHOP = "shop"
 
-@router.callback_query(StateFilter("*"), F.data.startswith("admin_cat:"))
-async def process_product_category(callback: CallbackQuery, state: FSMContext):
-    """Process category selection and ask for profile (if coffee) or name."""
-    # Ensure state is cleared if user jumps here from elsewhere (or restart)
-    await state.clear()
+@router.callback_query(StateFilter(AdminStates.waiting_for_product_type), F.data.startswith("admin_type:"))
+async def process_product_type(callback: CallbackQuery, state: FSMContext):
+    """Process product type selection (Coffee or Shop)."""
+    product_type = callback.data.split(":")[1]
+    logger.info(f"Product type selected: {product_type} for user {callback.from_user.id}")
     
-    category = callback.data.split(":")[1]
-    logger.info(f"Category selected: {category} for user {callback.from_user.id}")
-    await state.update_data(category=category)
+    await state.update_data(product_type=product_type)
     
-    # For coffee categories (espresso/filter/universal), ask for profile first
-    if category in COFFEE_CATEGORIES:
+    if product_type == PRODUCT_TYPE_COFFEE:
+        # For coffee: ask for profile (espresso/filter/universal)
         await state.set_state(AdminStates.waiting_for_product_profile)
         from src.keyboards.admin_kb import get_profile_keyboard
         await callback.message.edit_text(
-            "🥤 <b>Крок 1/9: Профіль обсмаження</b>\n\n"
+            "🥤 <b>Крок 1: Профіль обсмаження</b>\n\n"
             "Оберіть профіль кави:\n\n"
             "<b>🥤 Еспресо</b> — для рістретто, американо, капучіно\n"
             "<b>🫖 Фільтр</b> — для крапельної кави, чаю, френч-пресу\n"
@@ -809,10 +852,10 @@ async def process_product_category(callback: CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
     else:
-        # For non-coffee categories (equipment, merch, etc.), go directly to name
+        # For shop: go directly to name
         await state.set_state(AdminStates.waiting_for_product_name)
         await callback.message.edit_text(
-            "📝 <b>Крок 1/3: Назва товару (UA)</b>\n"
+            "📝 <b>Крок 1: Назва товару (UA)</b>\n"
             "Введіть повну назву:",
             reply_markup=get_inline_cancel_keyboard(),
             parse_mode="HTML"
@@ -837,7 +880,7 @@ async def process_product_profile_selection(callback: CallbackQuery, state: FSMC
     
     await state.set_state(AdminStates.waiting_for_product_name)
     await callback.message.edit_text(
-        "📝 <b>Крок 2/9: Назва товару (UA)</b>\n"
+        "📝 <b>Крок 2: Назва товару (UA)</b>\n"
         "Введіть повну назву (наприклад: <i>Ethiopia Sidamo</i> або <i>Colombia Supremo</i>):",
         reply_markup=get_inline_cancel_keyboard(),
         parse_mode="HTML"
@@ -891,19 +934,16 @@ async def cmd_init_categories(message: Message, session: AsyncSession):
 
 @router.message(AdminStates.waiting_for_product_name, F.text, ~F.text.startswith("/"))
 async def process_product_name(message: Message, state: FSMContext):
-    """Process product name and branch based on category."""
+    """Process product name and branch based on product type (Coffee or Shop)."""
     logger.info(f"Product name entered: {message.text} for user {message.from_user.id}")
     await state.update_data(name_ua=message.text)
     data = await state.get_data()
     
-    category = data.get("category")
+    product_type = data.get("product_type", "coffee")
     
-    # Simple products (skip coffee specifics)
-    simple_categories = ["equipment", "merch", "other", "tea", "cocoa", "accessories"]
-    
-    if category in simple_categories:
-        # Skip coffee-specific steps, go to price
-        logger.info(f"Simple category detected: {category}. Moving to price.")
+    if product_type == PRODUCT_TYPE_SHOP:
+        # For shop products: skip coffee-specific steps, go to price
+        logger.info(f"Shop product type detected. Moving to price.")
         await state.set_state(AdminStates.waiting_for_product_price_300g)
         await message.answer(
             "💰 <b>Крок 3/3: Ціна (грн)</b>\n"
@@ -912,8 +952,8 @@ async def process_product_name(message: Message, state: FSMContext):
             parse_mode="HTML"
         )
     else:
-        # Proceed to coffee origin (Step 3/9)
-        logger.info(f"Coffee category detected. Moving to origin.")
+        # For coffee products: proceed to origin (Step 3/9)
+        logger.info(f"Coffee product type detected. Moving to origin.")
         await state.set_state(AdminStates.waiting_for_product_origin)
         await message.answer(
             "🌍 <b>Крок 3/9: Походження / Регіон</b>\n"
@@ -951,17 +991,10 @@ async def process_roast_level_selection(callback: CallbackQuery, state: FSMConte
     
     roast_level = roast_map.get(roast_code, "Середнє")
     
-    # AUTOMATIC PROFILE MAPPING
-    # Default to universal
-    profile = "universal"
-    if roast_code == "roast_espresso":
-        profile = "espresso"
-    elif roast_code == "roast_filter":
-        profile = "filter"
-    elif roast_code == "roast_light":
-        profile = "filter"
-    elif roast_code == "roast_dark":
-        profile = "espresso"
+    # Get existing data to preserve profile (user selected earlier)
+    data = await state.get_data()
+    # Use profile from state if available (selected by user), otherwise default to universal
+    profile = data.get('profile', 'universal')
 
     await state.update_data(roast_level=roast_level, profile=profile)
     
@@ -1051,8 +1084,10 @@ async def process_product_price_300g(message: Message, state: FSMContext):
         await state.update_data(price_300g=price)
         data = await state.get_data()
         
-        if data.get("category") == "equipment":
-            # For equipment, 300g field is "unit price", 1kg is 0
+        product_type = data.get("product_type", "coffee")
+        
+        if product_type == PRODUCT_TYPE_SHOP:
+            # For shop products: skip 1kg price, go directly to image
             await state.update_data(price_1kg=0)
             await state.set_state(AdminStates.waiting_for_product_image)
             await message.answer(
@@ -1061,9 +1096,10 @@ async def process_product_price_300g(message: Message, state: FSMContext):
                 reply_markup=get_skip_image_keyboard(),
                 parse_mode="HTML"
             )
-            # No AI description for auto-gen for non-coffee for now, simple fallback
-            await state.update_data(description=f"📦 <b>{data.get('name_ua')}</b>. Якісний аксесуар для вашої кавової рутини.")
+            # Set simple description for shop products (no AI generation)
+            await state.update_data(description=f"📦 <b>{data.get('name_ua')}</b>. Якісний товар для вашої кавової рутини.")
         else:
+            # For coffee products: ask for 1kg price
             await state.set_state(AdminStates.waiting_for_product_price_1kg)
             await message.answer(
                 "💰 <b>Крок 7/8: Ціна за 1кг (грн)</b>\n"
@@ -1203,7 +1239,8 @@ async def show_product_preview(message: Message, state: FSMContext):
     
     price_300g_formatted = format_currency(data.get('price_300g', 0))
     price_1kg_formatted = format_currency(data.get('price_1kg', 0))
-    is_coffee = data.get('category') in COFFEE_CATEGORIES
+    product_type = data.get("product_type", "coffee")
+    is_coffee = product_type == PRODUCT_TYPE_COFFEE
     
     preview_parts = [
         "<b>🧐 ПЕРЕГЛЯД ТОВАРУ:</b>",
@@ -1251,9 +1288,6 @@ async def finalize_product_add(message: Message, state: FSMContext, session: Asy
     """Finalize product addition with custom or generated description."""
     logger.info(f"Finalize product add triggered by user {message.from_user.id} with text: {message.text}")
     try:
-        # DEBUG: Check if handler is called
-        # await message.answer("DEBUG: Entering finalize_product_add")
-        
         data = await state.get_data()
         
         # Validate required data
@@ -1267,9 +1301,18 @@ async def finalize_product_add(message: Message, state: FSMContext, session: Asy
         if message.text != "✅ Зберегти":
             description = message.text
         
-        category = data.get('category', 'coffee')
-        # Use profile from state if available (selected by user), otherwise default
-        profile = data.get('profile', 'universal')
+        # Get product type (coffee or shop)
+        product_type = data.get('product_type', 'coffee')
+        
+        # Set category and profile based on product type
+        if product_type == PRODUCT_TYPE_COFFEE:
+            # For coffee: category is always "coffee", profile is selected by user
+            category = data.get('profile', 'universal')
+            profile = data.get('profile', 'universal')
+        else:
+            # For shop: category is "equipment"
+            category = "equipment"
+            profile = None  # No profile for non-coffee products
         
         new_product = Product(
             category=category,
@@ -1350,18 +1393,124 @@ async def toggle_product_status(callback: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "admin_products_list")
 async def show_products_list(callback: CallbackQuery, session: AsyncSession):
-    """Show products list with management actions."""
+    """Show products list with category filter."""
     if not is_admin(callback.from_user.id):
         await callback.answer("❌ Доступ заборонено", show_alert=True)
         return
     
-    query = select(Product).order_by(Product.sort_order)
+    # Show category filter first
+    text = "<b>📦 УПРАВЛІННЯ ТОВАРАМИ</b>\n\nОберіть категорію для перегляду:"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="☕ Кава", callback_data="admin_products_category:coffee"))
+    builder.row(InlineKeyboardButton(text="📦 Магазин", callback_data="admin_products_category:equipment"))
+    builder.row(InlineKeyboardButton(text="📋 Всі товари", callback_data="admin_products_category:all"))
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_products_category:"))
+async def show_products_by_category(callback: CallbackQuery, session: AsyncSession):
+    """Show products filtered by category with sub-filters for coffee."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    category = callback.data.split(":")[1]
+    
+    # For coffee category, show sub-filter first
+    if category == "coffee":
+        text = "☕ <b>КАВА</b>\n\nОберіть профіль для перегляду:"
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🥤 Еспресо", callback_data="admin_products_profile:espresso"))
+        builder.row(InlineKeyboardButton(text="🫖 Фільтр", callback_data="admin_products_profile:filter"))
+        builder.row(InlineKeyboardButton(text="⚗️ Універсальна", callback_data="admin_products_profile:universal"))
+        builder.row(InlineKeyboardButton(text="☕ Вся кава", callback_data="admin_products_category:coffee_all"))
+        builder.row(InlineKeyboardButton(text="← Назад", callback_data="admin_products_list"))
+        
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await callback.answer()
+        return
+    
+    # Build query based on category
+    if category == "coffee_all":
+        query = select(Product).where(Product.category == "coffee").order_by(Product.sort_order)
+        title = "☕ ВСЯ КАВА"
+    elif category == "equipment":
+        query = select(Product).where(Product.category == "equipment").order_by(Product.sort_order)
+        title = "📦 МАГАЗИН"
+    else:
+        query = select(Product).order_by(Product.sort_order)
+        title = "📋 ВСІ ТОВАРИ"
+    
     result = await session.execute(query)
     products = result.scalars().all()
     
-    text = "<b>☕ СПИСОК ТОВАРІВ</b>\n\nОберіть лот для перегляду та редагування:"
+    if not products:
+        text = f"<b>{title}</b>\n\nНемає товарів у цій категорії"
+        # Add back button
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="← Назад", callback_data="admin_products_list"))
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await callback.answer()
+        return
+    
+    text = f"<b>{title}</b> ({len(products)})\n\nОберіть товар для перегляду та редагування:"
     
     keyboard = get_admin_product_list_keyboard(products)
+    
+    # Add back button to existing keyboard
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="← Назад до категорій", callback_data="admin_products_list")
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_products_profile:"))
+async def show_products_by_profile(callback: CallbackQuery, session: AsyncSession):
+    """Show products filtered by coffee profile (espresso/filter/universal)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("❌ Доступ заборонено", show_alert=True)
+        return
+    
+    profile = callback.data.split(":")[1]
+    
+    profile_titles = {
+        "espresso": "🥤 ЕСПРЕСО",
+        "filter": "🫖 ФІЛЬТР",
+        "universal": "⚗️ УНІВЕРСАЛЬНА"
+    }
+    
+    title = profile_titles.get(profile, "☕ КАВА")
+    
+    # Query for products with this profile
+    query = select(Product).where(
+        Product.profile == profile
+    ).order_by(Product.sort_order)
+    
+    result = await session.execute(query)
+    products = result.scalars().all()
+    
+    if not products:
+        text = f"<b>{title}</b>\n\nНемає товарів з цим профілем"
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="← Назад до кави", callback_data="admin_products_category:coffee"))
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await callback.answer()
+        return
+    
+    text = f"<b>{title}</b> ({len(products)})\n\nОберіть товар для перегляду та редагування:"
+    
+    keyboard = get_admin_product_list_keyboard(products)
+    
+    # Add back button
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="← Назад до профілів", callback_data="admin_products_category:coffee")
+    ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
@@ -2169,6 +2318,7 @@ async def admin_product_delete_confirm(callback: CallbackQuery, session: AsyncSe
         await session.delete(product)
         await session.commit()
         await callback.answer(f"🗑 {name} видалено", show_alert=True)
+        await show_products_list(callback, session)
     else:
         await callback.answer("❌ Товар вже було видалено")
 
