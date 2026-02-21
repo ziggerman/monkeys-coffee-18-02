@@ -299,36 +299,42 @@ class AIService:
         Returns:
             Tuple of (image_url, error, local_path)
         """
-        # Build detailed prompt for coffee category
-        base_prompt = "Coffee shop menu banner, minimalist design, warm coffee colors, "
+        # Build detailed prompt for coffee category - Ukrainian context
+        # Map category names to appropriate prompts
+        category_lower = category_name.lower().strip() if category_name else ""
         
-        if profile == "espresso":
+        # Determine style based on category name or profile
+        if profile == "espresso" or "еспресо" in category_lower or "espresso" in category_lower:
             prompt = (
-                f"{base_prompt}"
-                f"Dark roasted coffee beans, espresso machine silhouette, rich brown and black colors, "
-                f"warm amber light, professional coffee photography style, clean background, "
-                f"Telegram bot menu aesthetic, no text"
+                "Elegant coffee shop menu banner for espresso coffee section. "
+                "Dark roasted coffee beans, professional espresso machine in background, "
+                "rich dark brown and black colors with warm amber accents, "
+                "professional photography, clean minimalist composition, "
+                "soft studio lighting, high quality, no text, no words, Telegram bot menu style"
             )
-        elif profile == "filter":
+        elif profile == "filter" or "фільтр" in category_lower or "filter" in category_lower or "альтернатива" in category_lower:
             prompt = (
-                f"{base_prompt}"
-                f"Light roasted coffee beans, pour over dripper, bright citrus and floral elements, "
-                f"golden yellow and light brown colors, morning light, clean and fresh aesthetic, "
-                f"Telegram bot menu style, no text"
+                "Elegant coffee shop menu banner for filter coffee section. "
+                "Light roasted coffee beans, pour-over dripper (V60, Chemex), "
+                "bright golden yellow and light brown colors, morning natural light, "
+                "clean fresh aesthetic, professional product photography, "
+                "minimalist design, high quality, no text, no words, Telegram bot menu style"
             )
-        elif profile == "universal":
+        elif profile == "universal" or "універсальн" in category_lower or "універсальн" in category_lower:
             prompt = (
-                f"{base_prompt}"
-                f"Mixed coffee beans, balanced lighting, versatile coffee accessories, "
-                f"warm brown and orange tones, cozy atmosphere, professional product shot, "
-                f"Telegram bot menu aesthetic, no text"
+                "Elegant coffee shop menu banner for versatile coffee selection. "
+                "Mixed variety of coffee beans, different roast levels displayed together, "
+                "balanced warm brown and orange tones, cozy coffee shop atmosphere, "
+                "professional product shot, clean minimalist composition, "
+                "high quality, no text, no words, Telegram bot menu style"
             )
         else:
+            # Default coffee banner - use category name to make it relevant
             prompt = (
-                f"{base_prompt}"
-                f"Coffee menu banner with variety of beans, professional photography, "
-                f"warm coffee shop lighting, brown and amber color palette, "
-                f"minimalist design for Telegram bot, no text"
+                f"Elegant coffee shop menu banner for {category_name} section. "
+                "Professional product photography, warm coffee colors (brown, amber, golden), "
+                "clean minimalist composition, soft studio lighting, "
+                "high quality, no text, no words, Telegram bot menu style"
             )
         
         return await self.generate_image(prompt, save_path=save_path)

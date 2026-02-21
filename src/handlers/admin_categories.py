@@ -997,17 +997,31 @@ async def generate_category_image_ai(callback: CallbackQuery, session: AsyncSess
     try:
         from src.services.ai_service import ai_service
         
-        # Determine profile from slug
+        # Determine profile from slug - map Ukrainian category names to profiles
         profile = None
-        if category.slug in ["espresso", "filter", "universal"]:
-            profile = category.slug
-        elif "coffee" in category.slug:
-            profile = "universal"
+        category_slug = category.slug.lower() if category.slug else ""
         
-        # Generate image
+        # Map slugs and names to profiles
+        if category_slug in ["espresso", "espresso_coffee"]:
+            profile = "espresso"
+        elif category_slug in ["filter", "filter_coffee", "альтернатива"]:
+            profile = "filter"
+        elif category_slug in ["universal", "coffee", "кава"]:
+            profile = "universal"
+        else:
+            # Also check the Ukrainian name
+            name_lower = category.name_ua.lower() if category.name_ua else ""
+            if "еспресо" in name_lower:
+                profile = "espresso"
+            elif "фільтр" in name_lower or "альтернатива" in name_lower:
+                profile = "filter"
+            elif "універсальн" in name_lower:
+                profile = "universal"
+        
+        # Generate image - pass both name and profile for better prompt
         save_path = ASSETS_DIR / f"category_{category.slug}.png"
         image_url, error, local_path = await ai_service.generate_category_image(
-            category_name=category.name_ua,
+            category_name=category.name_ua or category.slug,
             profile=profile,
             save_path=save_path
         )
@@ -1022,9 +1036,14 @@ async def generate_category_image_ai(callback: CallbackQuery, session: AsyncSess
             return
         
         if local_path:
-            # Save to database
-            category.image_path = str(local_path)
-            await session.commit()
+            # Save to database - store relative path for portability
+            try:
+                # Try to make path relative to project root
+                category.image_path = str(local_path)
+                await session.commit()
+            except Exception as db_error:
+                logger.error(f"Error saving image path to DB: {db_error}")
+                # Still show the image even if DB save fails
             
             await callback.message.answer_photo(
                 FSInputFile(local_path),
@@ -1033,15 +1052,26 @@ async def generate_category_image_ai(callback: CallbackQuery, session: AsyncSess
                 parse_mode="HTML"
             )
         else:
-            await callback.message.answer(
-                f"⚠️ Зображення згенеровано, але не вдалося зберегти локально.\n"
-                f"URL: {image_url}",
-                parse_mode="HTML"
-            )
+            # If URL was returned but not saved locally
+            if image_url:
+                await callback.message.answer(
+                    f"⚠️ Зображення згенеровано.\n"
+                    f"URL: {image_url}\n\n"
+                    f"Спробуйте ще раз або завантажте вручну.",
+                    parse_mode="HTML"
+                )
+            else:
+                await callback.message.answer(
+                    "❌ Не вдалося згенерувати зображення. Спробуйте пізніше.",
+                    parse_mode="HTML"
+                )
             
     except Exception as e:
-        logger.error(f"Error generating category image: {e}")
-        await loading_msg.delete()
+        logger.error(f"Error generating category image: {e}", exc_info=True)
+        try:
+            await loading_msg.delete()
+        except:
+            pass
         await callback.message.answer(f"❌ Помилка: {str(e)}", parse_mode="HTML")
     
     await callback.answer()

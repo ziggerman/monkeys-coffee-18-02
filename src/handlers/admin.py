@@ -1979,6 +1979,31 @@ async def process_product_edit_profile(callback: CallbackQuery, state: FSMContex
 async def process_product_edit_category(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Process category edit selection."""
     category_slug = callback.data.split(":")[1]
+    
+    # Coffee categories that need profile
+    COFFEE_CATEGORIES = ["espresso", "filter", "universal"]
+    
+    # Get current product to check if we need to update profile
+    data = await state.get_data()
+    product_id = data.get('product_id')
+    
+    if product_id:
+        query = select(Product).where(Product.id == product_id)
+        result = await session.execute(query)
+        product = result.scalar_one_or_none()
+        
+        if product:
+            # If changing to coffee category, set default profile
+            if category_slug in COFFEE_CATEGORIES:
+                # Set default profile if not already set
+                if not product.profile or product.profile not in COFFEE_CATEGORIES:
+                    product.profile = "universal"
+                    await session.commit()  # Commit the profile change
+            else:
+                # If changing to non-coffee category, profile doesn't apply
+                # Keep existing or clear
+                pass
+    
     await save_product_edit(callback, state, session, category_slug)
 
 
